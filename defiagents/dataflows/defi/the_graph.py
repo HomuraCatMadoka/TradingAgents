@@ -93,7 +93,7 @@ class TheGraphClient:
             )
             self._clients[subgraph_url] = Client(
                 transport=transport,
-                fetch_schema_from_transport=True,
+                fetch_schema_from_transport=False,  # Disable schema fetch for compatibility
             )
         return self._clients[subgraph_url]
 

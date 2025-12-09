@@ -15,8 +15,6 @@ Features:
 import logging
 from typing import Dict, List, Optional, Any, Union
 from web3 import Web3
-from web3.middleware import geth_poa_middleware
-from eth_typing import ChecksumAddress
 
 logger = logging.getLogger(__name__)
 
@@ -102,9 +100,8 @@ class OnChainClient:
 
                 w3 = Web3(Web3.HTTPProvider(url))
 
-                # Add PoA middleware for chains that need it (Polygon, BSC, etc.)
-                if chain in ["polygon", "bsc"]:
-                    w3.middleware_onion.inject(geth_poa_middleware, layer=0)
+                # Note: In Web3.py v7+, PoA middleware is no longer needed
+                # PoA chains work automatically
 
                 # Verify connection
                 if w3.is_connected():
