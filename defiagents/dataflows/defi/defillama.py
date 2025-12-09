@@ -20,6 +20,49 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _normalize_tvl(tvl_value: Any) -> float:
+    """
+    Normalize TVL value to float.
+
+    Handles cases where TVL is:
+    - float/int: return as is
+    - list: return sum or first element
+    - dict: extract 'tvl' field recursively
+    - None: return 0
+
+    Args:
+        tvl_value: TVL value from API (can be number, list, dict, or None)
+
+    Returns:
+        Normalized TVL as float
+    """
+    if tvl_value is None:
+        return 0.0
+
+    if isinstance(tvl_value, (int, float)):
+        return float(tvl_value)
+
+    if isinstance(tvl_value, list):
+        if not tvl_value:
+            return 0.0
+        # If list of numbers, sum them (multi-chain TVL)
+        if isinstance(tvl_value[0], (int, float)):
+            return float(sum(tvl_value))
+        # If list of dicts, sum their tvl fields recursively
+        return sum(_normalize_tvl(item.get('tvl', 0)) for item in tvl_value if isinstance(item, dict))
+
+    if isinstance(tvl_value, dict):
+        # Recursively handle dict's tvl field
+        return _normalize_tvl(tvl_value.get('tvl', 0))
+
+    # Fallback: try to convert to float
+    try:
+        return float(tvl_value)
+    except (ValueError, TypeError):
+        logger.warning(f"Unexpected TVL type: {type(tvl_value)}, value: {tvl_value}")
+        return 0.0
+
+
 class DefiLlamaAPI:
     """DeFi Llama API client."""
 
@@ -283,7 +326,7 @@ def format_protocol_summary(protocol_data: Dict) -> str:
         Formatted markdown string
     """
     name = protocol_data.get('name', 'Unknown')
-    tvl = protocol_data.get('tvl', 0)
+    tvl = _normalize_tvl(protocol_data.get('tvl', 0))
     chains = protocol_data.get('chains', [])
     category = protocol_data.get('category', 'Unknown')
     description = protocol_data.get('description', 'No description available')
@@ -313,13 +356,14 @@ def format_protocol_summary(protocol_data: Dict) -> str:
     chain_tvls = protocol_data.get('chainTvls', {})
     if chain_tvls:
         for chain, chain_tvl in chain_tvls.items():
-            if isinstance(chain_tvl, (int, float)) and chain_tvl > 0:
-                if chain_tvl >= 1e9:
-                    tvl_display = f"${chain_tvl/1e9:.2f}B"
-                elif chain_tvl >= 1e6:
-                    tvl_display = f"${chain_tvl/1e6:.2f}M"
+            normalized_tvl = _normalize_tvl(chain_tvl)
+            if normalized_tvl > 0:
+                if normalized_tvl >= 1e9:
+                    tvl_display = f"${normalized_tvl/1e9:.2f}B"
+                elif normalized_tvl >= 1e6:
+                    tvl_display = f"${normalized_tvl/1e6:.2f}M"
                 else:
-                    tvl_display = f"${chain_tvl:,.0f}"
+                    tvl_display = f"${normalized_tvl:,.0f}"
                 summary += f"- **{chain}**: {tvl_display}\n"
 
     return summary

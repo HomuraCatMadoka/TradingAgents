@@ -36,6 +36,40 @@ from defiagents.agents.utils.agent_utils import (
     get_global_news
 )
 
+# Import DeFi-specific tools
+from defiagents.agents.utils.defi_protocol_tools import (
+    get_protocol_overview,
+    get_protocol_tvl,
+    get_all_defi_protocols,
+    get_chain_tvl_overview,
+    compare_protocols,
+    search_protocols_by_category,
+)
+from defiagents.agents.utils.defi_pool_tools import (
+    get_uniswap_top_pools,
+    get_uniswap_pool_details,
+    get_aave_lending_markets,
+    get_aave_asset_details,
+    compare_yield_opportunities,
+)
+from defiagents.agents.utils.defi_market_tools import (
+    get_crypto_price,
+    get_crypto_market_data,
+    search_crypto_tokens,
+    compare_token_prices,
+    get_trending_tokens,
+    get_global_defi_metrics,
+    get_token_by_contract,
+)
+from defiagents.agents.utils.defi_wallet_tools import (
+    get_native_balance,
+    get_erc20_balance,
+    get_token_info,
+    get_wallet_portfolio,
+    get_current_block,
+    get_gas_price,
+)
+
 from .conditional_logic import ConditionalLogic
 from .setup import GraphSetup
 from .propagation import Propagator
@@ -48,14 +82,17 @@ class TradingAgentsGraph:
 
     def __init__(
         self,
-        selected_analysts=["market", "social", "news", "fundamentals"],
+        selected_analysts=["defi_market", "protocol", "yield", "risk"],
         debug=False,
         config: Dict[str, Any] = None,
     ):
         """Initialize the trading agents graph and components.
 
         Args:
-            selected_analysts: List of analyst types to include
+            selected_analysts: List of analyst types to include.
+                Default is DeFi analysts for DeFi analysis.
+                Options: "defi_market", "protocol", "yield", "risk" (NEW DeFi analysts)
+                         "market", "social", "news", "fundamentals" (legacy stock analysts)
             debug: Whether to run in debug mode
             config: Configuration dictionary. If None, uses default config
         """
@@ -123,6 +160,7 @@ class TradingAgentsGraph:
     def _create_tool_nodes(self) -> Dict[str, ToolNode]:
         """Create tool nodes for different data sources using abstract methods."""
         return {
+            # Legacy stock analyst tool nodes
             "market": ToolNode(
                 [
                     # Core stock data tools
@@ -153,6 +191,68 @@ class TradingAgentsGraph:
                     get_balance_sheet,
                     get_cashflow,
                     get_income_statement,
+                ]
+            ),
+            # New DeFi analyst tool nodes
+            "defi_market": ToolNode(
+                [
+                    # Protocol data
+                    get_protocol_overview,
+                    get_protocol_tvl,
+                    get_all_defi_protocols,
+                    get_chain_tvl_overview,
+                    compare_protocols,
+                    search_protocols_by_category,
+                    # Market data
+                    get_crypto_price,
+                    get_crypto_market_data,
+                    search_crypto_tokens,
+                    compare_token_prices,
+                    get_trending_tokens,
+                    get_global_defi_metrics,
+                ]
+            ),
+            "protocol": ToolNode(
+                [
+                    # Protocol analysis tools
+                    get_protocol_overview,
+                    get_protocol_tvl,
+                    compare_protocols,
+                    # Token/market data
+                    get_crypto_market_data,
+                    get_token_by_contract,
+                ]
+            ),
+            "yield": ToolNode(
+                [
+                    # Pool and lending analysis
+                    get_uniswap_top_pools,
+                    get_uniswap_pool_details,
+                    get_aave_lending_markets,
+                    get_aave_asset_details,
+                    compare_yield_opportunities,
+                    # Protocol comparison
+                    get_protocol_overview,
+                    compare_protocols,
+                    # Price data
+                    get_crypto_price,
+                    compare_token_prices,
+                ]
+            ),
+            "risk": ToolNode(
+                [
+                    # Protocol analysis
+                    get_protocol_overview,
+                    get_protocol_tvl,
+                    compare_protocols,
+                    # Pool details
+                    get_uniswap_pool_details,
+                    get_aave_asset_details,
+                    # Market and system data
+                    get_crypto_market_data,
+                    get_global_defi_metrics,
+                    get_current_block,
+                    get_gas_price,
                 ]
             ),
         }

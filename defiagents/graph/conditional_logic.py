@@ -43,6 +43,39 @@ class ConditionalLogic:
             return "tools_fundamentals"
         return "Msg Clear Fundamentals"
 
+    # New DeFi-specific analyst conditional logic
+    def should_continue_defi_market(self, state: AgentState):
+        """Determine if DeFi market analysis should continue."""
+        messages = state["messages"]
+        last_message = messages[-1]
+        if last_message.tool_calls:
+            return "tools_defi_market"
+        return "Msg Clear Defi_market"
+
+    def should_continue_protocol(self, state: AgentState):
+        """Determine if protocol analysis should continue."""
+        messages = state["messages"]
+        last_message = messages[-1]
+        if last_message.tool_calls:
+            return "tools_protocol"
+        return "Msg Clear Protocol"
+
+    def should_continue_yield(self, state: AgentState):
+        """Determine if yield analysis should continue."""
+        messages = state["messages"]
+        last_message = messages[-1]
+        if last_message.tool_calls:
+            return "tools_yield"
+        return "Msg Clear Yield"
+
+    def should_continue_risk(self, state: AgentState):
+        """Determine if DeFi risk analysis should continue."""
+        messages = state["messages"]
+        last_message = messages[-1]
+        if last_message.tool_calls:
+            return "tools_risk"
+        return "Msg Clear Risk"
+
     def should_continue_debate(self, state: AgentState) -> str:
         """Determine if debate should continue."""
 

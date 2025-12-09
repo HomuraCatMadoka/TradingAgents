@@ -5,21 +5,38 @@ from openai import OpenAI
 
 class FinancialSituationMemory:
     def __init__(self, name, config):
-        if config["backend_url"] == "http://localhost:11434/v1":
+        # Determine embedding strategy based on LLM provider
+        llm_provider = config.get("llm_provider", "openai").lower()
+
+        if llm_provider == "google":
+            # Use ChromaDB's default local embeddings for Google Gemini
+            self.use_local_embeddings = True
+            self.embedding = None
+            self.client = None
+        elif config["backend_url"] == "http://localhost:11434/v1":
+            self.use_local_embeddings = False
             self.embedding = "nomic-embed-text"
+            self.client = OpenAI(base_url=config["backend_url"])
         else:
+            self.use_local_embeddings = False
             self.embedding = "text-embedding-3-small"
-        self.client = OpenAI(base_url=config["backend_url"])
+            self.client = OpenAI(base_url=config["backend_url"])
+
         self.chroma_client = chromadb.Client(Settings(allow_reset=True))
         self.situation_collection = self.chroma_client.create_collection(name=name)
 
     def get_embedding(self, text):
-        """Get OpenAI embedding for a text"""
-        
-        response = self.client.embeddings.create(
-            model=self.embedding, input=text
-        )
-        return response.data[0].embedding
+        """Get embedding for a text"""
+        if self.use_local_embeddings:
+            # ChromaDB will use its default embeddings (sentence-transformers)
+            # We don't need to generate embeddings manually
+            return None
+        else:
+            # Use OpenAI/Ollama embeddings
+            response = self.client.embeddings.create(
+                model=self.embedding, input=text
+            )
+            return response.data[0].embedding
 
     def add_situations(self, situations_and_advice):
         """Add financial situations and their corresponding advice. Parameter is a list of tuples (situation, rec)"""
@@ -35,24 +52,43 @@ class FinancialSituationMemory:
             situations.append(situation)
             advice.append(recommendation)
             ids.append(str(offset + i))
-            embeddings.append(self.get_embedding(situation))
+            if not self.use_local_embeddings:
+                embeddings.append(self.get_embedding(situation))
 
-        self.situation_collection.add(
-            documents=situations,
-            metadatas=[{"recommendation": rec} for rec in advice],
-            embeddings=embeddings,
-            ids=ids,
-        )
+        # Add to collection
+        if self.use_local_embeddings:
+            # ChromaDB will generate embeddings automatically
+            self.situation_collection.add(
+                documents=situations,
+                metadatas=[{"recommendation": rec} for rec in advice],
+                ids=ids,
+            )
+        else:
+            # Use pre-generated embeddings
+            self.situation_collection.add(
+                documents=situations,
+                metadatas=[{"recommendation": rec} for rec in advice],
+                embeddings=embeddings,
+                ids=ids,
+            )
 
     def get_memories(self, current_situation, n_matches=1):
-        """Find matching recommendations using OpenAI embeddings"""
-        query_embedding = self.get_embedding(current_situation)
-
-        results = self.situation_collection.query(
-            query_embeddings=[query_embedding],
-            n_results=n_matches,
-            include=["metadatas", "documents", "distances"],
-        )
+        """Find matching recommendations using embeddings"""
+        if self.use_local_embeddings:
+            # Let ChromaDB handle embedding generation
+            results = self.situation_collection.query(
+                query_texts=[current_situation],
+                n_results=n_matches,
+                include=["metadatas", "documents", "distances"],
+            )
+        else:
+            # Use custom embeddings
+            query_embedding = self.get_embedding(current_situation)
+            results = self.situation_collection.query(
+                query_embeddings=[query_embedding],
+                n_results=n_matches,
+                include=["metadatas", "documents", "distances"],
+            )
 
         matched_results = []
         for i in range(len(results["documents"][0])):

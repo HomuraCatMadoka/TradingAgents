@@ -48,18 +48,26 @@ class RiskDebateState(TypedDict):
 
 
 class AgentState(MessagesState):
-    company_of_interest: Annotated[str, "Company that we are interested in trading"]
-    trade_date: Annotated[str, "What date we are trading at"]
+    # DeFi-specific parameters
+    protocol_of_interest: Annotated[str, "DeFi protocol that we are interested in analyzing"]
+    chain: Annotated[str, "Blockchain network (ethereum, arbitrum, optimism, etc.)"]
+    investment_amount: Annotated[Optional[float], "Investment amount in USD for strategy analysis"]
+    trade_date: Annotated[str, "What date we are analyzing at"]
+
+    # Legacy compatibility (deprecated, use protocol_of_interest instead)
+    company_of_interest: Annotated[Optional[str], "DEPRECATED: Use protocol_of_interest"]
 
     sender: Annotated[str, "Agent that sent this message"]
 
-    # research step
-    market_report: Annotated[str, "Report from the Market Analyst"]
+    # Analyst reports
+    market_report: Annotated[str, "Report from the DeFi Market Analyst"]
     sentiment_report: Annotated[str, "Report from the Social Media Analyst"]
     news_report: Annotated[
-        str, "Report from the News Researcher of current world affairs"
+        str, "Report from the News Researcher of current DeFi affairs"
     ]
-    fundamentals_report: Annotated[str, "Report from the Fundamentals Researcher"]
+    fundamentals_report: Annotated[str, "Report from the Protocol Analyst"]
+    yield_report: Annotated[str, "Report from the Yield Analyst"]
+    risk_report: Annotated[str, "Report from the DeFi Risk Analyst"]
 
     # researcher team discussion step
     investment_debate_state: Annotated[

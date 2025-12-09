@@ -7,6 +7,12 @@ from .analysts.market_analyst import create_market_analyst
 from .analysts.news_analyst import create_news_analyst
 from .analysts.social_media_analyst import create_social_media_analyst
 
+# New DeFi-specific analysts
+from .analysts.defi_market_analyst import create_defi_market_analyst
+from .analysts.protocol_analyst import create_protocol_analyst
+from .analysts.yield_analyst import create_yield_analyst
+from .analysts.defi_risk_analyst import create_defi_risk_analyst
+
 from .researchers.bear_researcher import create_bear_researcher
 from .researchers.bull_researcher import create_bull_researcher
 
@@ -37,4 +43,9 @@ __all__ = [
     "create_safe_debator",
     "create_social_media_analyst",
     "create_trader",
+    # New DeFi-specific analysts
+    "create_defi_market_analyst",
+    "create_protocol_analyst",
+    "create_yield_analyst",
+    "create_defi_risk_analyst",
 ]

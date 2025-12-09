@@ -38,16 +38,20 @@ class GraphSetup:
         self.conditional_logic = conditional_logic
 
     def setup_graph(
-        self, selected_analysts=["market", "social", "news", "fundamentals"]
+        self, selected_analysts=["defi_market", "protocol", "yield", "risk"]
     ):
         """Set up and compile the agent workflow graph.
 
         Args:
             selected_analysts (list): List of analyst types to include. Options are:
-                - "market": Market analyst
+                - "market": Market analyst (legacy)
                 - "social": Social media analyst
                 - "news": News analyst
-                - "fundamentals": Fundamentals analyst
+                - "fundamentals": Fundamentals analyst (legacy)
+                - "defi_market": DeFi Market Analyst (NEW - recommended for DeFi)
+                - "protocol": Protocol Fundamentals Analyst (NEW - DeFi protocols)
+                - "yield": Yield Analyst (NEW - DeFi yield strategies)
+                - "risk": DeFi Risk Analyst (NEW - DeFi-specific risks)
         """
         if len(selected_analysts) == 0:
             raise ValueError("Trading Agents Graph Setup Error: no analysts selected!")
@@ -84,6 +88,35 @@ class GraphSetup:
             )
             delete_nodes["fundamentals"] = create_msg_delete()
             tool_nodes["fundamentals"] = self.tool_nodes["fundamentals"]
+
+        # New DeFi-specific analysts
+        if "defi_market" in selected_analysts:
+            analyst_nodes["defi_market"] = create_defi_market_analyst(
+                self.quick_thinking_llm
+            )
+            delete_nodes["defi_market"] = create_msg_delete()
+            tool_nodes["defi_market"] = self.tool_nodes.get("defi_market", self.tool_nodes.get("market"))
+
+        if "protocol" in selected_analysts:
+            analyst_nodes["protocol"] = create_protocol_analyst(
+                self.quick_thinking_llm
+            )
+            delete_nodes["protocol"] = create_msg_delete()
+            tool_nodes["protocol"] = self.tool_nodes.get("protocol", self.tool_nodes.get("fundamentals"))
+
+        if "yield" in selected_analysts:
+            analyst_nodes["yield"] = create_yield_analyst(
+                self.quick_thinking_llm
+            )
+            delete_nodes["yield"] = create_msg_delete()
+            tool_nodes["yield"] = self.tool_nodes.get("yield", self.tool_nodes.get("market"))
+
+        if "risk" in selected_analysts:
+            analyst_nodes["risk"] = create_defi_risk_analyst(
+                self.quick_thinking_llm
+            )
+            delete_nodes["risk"] = create_msg_delete()
+            tool_nodes["risk"] = self.tool_nodes.get("risk", self.tool_nodes.get("market"))
 
         # Create researcher and manager nodes
         bull_researcher_node = create_bull_researcher(

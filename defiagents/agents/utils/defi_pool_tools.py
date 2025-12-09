@@ -12,6 +12,28 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
+def _get_subgraph_id(protocol: str, chain: str) -> str:
+    """
+    Get correct subgraph deployment ID from config.
+
+    Args:
+        protocol: Protocol name ('uniswap_v3', 'aave_v3')
+        chain: Chain name ('ethereum', 'arbitrum', etc.)
+
+    Returns:
+        Deployment ID string
+    """
+    try:
+        from defiagents.dataflows.config import get_config
+        config = get_config()
+        subgraph_key = f"{protocol}_{chain}"
+        return config.get("the_graph", {}).get("subgraphs", {}).get(subgraph_key, "")
+    except Exception as e:
+        logger.error(f"Error getting subgraph ID for {protocol}/{chain}: {e}")
+        return ""
+
+
+
 @tool
 def get_uniswap_top_pools(chain: str = "ethereum", limit: int = 10) -> str:
     """
@@ -30,16 +52,11 @@ def get_uniswap_top_pools(chain: str = "ethereum", limit: int = 10) -> str:
     try:
         from defiagents.dataflows.defi import get_uniswap_pools, format_uniswap_pool
 
-        # Map chain to subgraph ID
-        subgraph_map = {
-            "ethereum": "uniswap/uniswap-v3",
-            "arbitrum": "ianlapham/uniswap-arbitrum-one",
-            "optimism": "ianlapham/optimism-post-regenesis",
-            "polygon": "ianlapham/uniswap-v3-polygon",
-            "base": "messari/uniswap-v3-base",
-        }
+        # Get subgraph deployment ID from config
+        subgraph_id = _get_subgraph_id("uniswap_v3", chain.lower())
 
-        subgraph_id = subgraph_map.get(chain.lower(), "uniswap/uniswap-v3")
+        if not subgraph_id:
+            return f"❌ Uniswap V3 subgraph not configured for {chain}"
 
         pools = get_uniswap_pools(
             subgraph_id=subgraph_id,
@@ -90,15 +107,11 @@ def get_uniswap_pool_details(pool_address: str, chain: str = "ethereum") -> str:
     try:
         from defiagents.dataflows.defi import get_uniswap_pool_by_id, format_uniswap_pool
 
-        subgraph_map = {
-            "ethereum": "uniswap/uniswap-v3",
-            "arbitrum": "ianlapham/uniswap-arbitrum-one",
-            "optimism": "ianlapham/optimism-post-regenesis",
-            "polygon": "ianlapham/uniswap-v3-polygon",
-            "base": "messari/uniswap-v3-base",
-        }
+        # Get subgraph deployment ID from config
+        subgraph_id = _get_subgraph_id("uniswap_v3", chain.lower())
 
-        subgraph_id = subgraph_map.get(chain.lower(), "uniswap/uniswap-v3")
+        if not subgraph_id:
+            return f"❌ Uniswap V3 subgraph not configured for {chain}"
 
         pool = get_uniswap_pool_by_id(pool_address, subgraph_id=subgraph_id)
 
@@ -148,15 +161,11 @@ def get_aave_lending_markets(chain: str = "ethereum", limit: int = 20) -> str:
     try:
         from defiagents.dataflows.defi import get_aave_reserves
 
-        subgraph_map = {
-            "ethereum": "aave/protocol-v3",
-            "arbitrum": "aave/protocol-v3-arbitrum",
-            "optimism": "aave/protocol-v3-optimism",
-            "polygon": "aave/protocol-v3-polygon",
-            "base": "aave/protocol-v3-base",
-        }
+        # Get subgraph deployment ID from config
+        subgraph_id = _get_subgraph_id("aave_v3", chain.lower())
 
-        subgraph_id = subgraph_map.get(chain.lower(), "aave/protocol-v3")
+        if not subgraph_id:
+            return f"❌ Aave V3 subgraph not configured for {chain}"
 
         reserves = get_aave_reserves(subgraph_id=subgraph_id, limit=min(limit, 50))
 
@@ -211,15 +220,11 @@ def get_aave_asset_details(asset_symbol: str, chain: str = "ethereum") -> str:
     try:
         from defiagents.dataflows.defi import get_aave_reserve_by_symbol, format_aave_reserve
 
-        subgraph_map = {
-            "ethereum": "aave/protocol-v3",
-            "arbitrum": "aave/protocol-v3-arbitrum",
-            "optimism": "aave/protocol-v3-optimism",
-            "polygon": "aave/protocol-v3-polygon",
-            "base": "aave/protocol-v3-base",
-        }
+        # Get subgraph deployment ID from config
+        subgraph_id = _get_subgraph_id("aave_v3", chain.lower())
 
-        subgraph_id = subgraph_map.get(chain.lower(), "aave/protocol-v3")
+        if not subgraph_id:
+            return f"❌ Aave V3 subgraph not configured for {chain}"
 
         reserve = get_aave_reserve_by_symbol(asset_symbol, subgraph_id=subgraph_id)
 
@@ -266,14 +271,6 @@ def compare_yield_opportunities(asset_symbol: str) -> str:
         chains = ["ethereum", "arbitrum", "optimism", "polygon", "base"]
         opportunities = []
 
-        subgraph_map = {
-            "ethereum": "aave/protocol-v3",
-            "arbitrum": "aave/protocol-v3-arbitrum",
-            "optimism": "aave/protocol-v3-optimism",
-            "polygon": "aave/protocol-v3-polygon",
-            "base": "aave/protocol-v3-base",
-        }
-
         def ray_to_percent(ray_value):
             if not ray_value:
                 return 0.0
@@ -281,7 +278,12 @@ def compare_yield_opportunities(asset_symbol: str) -> str:
 
         for chain in chains:
             try:
-                subgraph_id = subgraph_map.get(chain)
+                # Get subgraph deployment ID from config
+                subgraph_id = _get_subgraph_id("aave_v3", chain)
+
+                if not subgraph_id:
+                    continue  # Skip if not configured
+
                 reserve = get_aave_reserve_by_symbol(asset_symbol, subgraph_id=subgraph_id)
 
                 if reserve:

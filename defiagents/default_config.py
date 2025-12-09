@@ -75,11 +75,22 @@ DEFAULT_CONFIG = {
     "the_graph": {
         "api_key": os.getenv("THE_GRAPH_API_KEY", ""),
         "api_url": "https://gateway.thegraph.com/api",
-        # Subgraph endpoints (will be populated with specific protocols)
+        # Subgraph deployment IDs (for Gateway API)
+        # Note: Use deployment IDs, not org/name format for Gateway
         "subgraphs": {
-            "uniswap_v3_ethereum": "uniswap/uniswap-v3",
-            "aave_v3_ethereum": "aave/protocol-v3",
-            # More subgraphs will be added after protocol research
+            # Uniswap V3
+            "uniswap_v3_ethereum": "5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV",
+            "uniswap_v3_arbitrum": "FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM",
+            "uniswap_v3_optimism": "Cghf4LfVqPiFw6fp6Y5X5Ubc8UpmUhSfJL82zwiBFLaj",
+            "uniswap_v3_polygon": "3hCPRGf4z88VC5rsBKU5AA9FBBq5nF3jbKJG7VZCbhjm",
+            "uniswap_v3_base": "43Hwfi3dJSoGpyas92HHyUFbhUFzf2F92rRUGYSDeZvK",
+
+            # Aave V3 (Note: Some may be outdated, will fallback to DeFi Llama)
+            "aave_v3_ethereum": "HB1Z2EAw4rtPRYVb2Nz8QGFLHCpym6ByBX6vbCViuE9F",
+            "aave_v3_arbitrum": "GQFbb95cE6d8mV989mL5figjaGaKCQB3xqYrr1bRyXqF",
+            "aave_v3_optimism": "5JNm6HVwvySNmhYGFwkCmJaKhBaE6YzxqaBXCrg8f6Fd",
+            "aave_v3_polygon": "BRMq8fytHKGf3jPCbwPVPLSrqj6o2Nc2tbRYGHN7CyoH",
+            "aave_v3_base": "EHKYe7mBMFPsZgbLyx9Nxy98Qm3A3hJPjNRtv8R89k4p",
         },
     },
 

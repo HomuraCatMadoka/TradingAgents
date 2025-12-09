@@ -188,9 +188,16 @@ TradingAgents/
 │   └── test_defi_integration.py       # Full integration tests
 ├── examples/                 # Example usage scripts
 │   └── example_usage.py      # Basic usage example
-├── docs/                     # Documentation
-│   ├── DeFiAgent_DEV.md      # DeFi Agent development roadmap
-│   └── defi_protocol_research_prompt.md  # Protocol research guide
+├── docs/                     # 📖 Documentation (see docs/README.md for full index)
+│   ├── README.md             # Documentation center (start here!)
+│   ├── Telegram_Bot_Guide.md # Bot deployment and usage
+│   ├── Security_Enhancement_Plan.md # Security roadmap
+│   ├── Future_Development_Plan.md   # Feature roadmap
+│   └── ...                   # Research materials and testing guides
+├── bot/                      # Telegram Bot frontend
+│   ├── handlers.py           # Command processing and Agent integration
+│   ├── formatters.py         # Message formatting
+│   └── config.py             # Bot configuration
 └── assets/                   # Images and static files
 ```
 

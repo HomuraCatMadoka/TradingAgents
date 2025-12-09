@@ -44,7 +44,6 @@ class TheGraphClient:
         self.use_gateway = use_gateway and api_key is not None
         self.cache_ttl = cache_ttl
         self._cache: Dict[str, tuple[Any, float]] = {}
-        self._clients: Dict[str, Client] = {}
 
     def _get_cached(self, key: str) -> Optional[Any]:
         """Get cached data if not expired."""
@@ -84,18 +83,21 @@ class TheGraphClient:
             return f"{self.PUBLIC_URL}/{subgraph_id}"
 
     def _get_client(self, subgraph_url: str) -> Client:
-        """Get or create GQL client for subgraph."""
-        if subgraph_url not in self._clients:
-            transport = RequestsHTTPTransport(
-                url=subgraph_url,
-                verify=True,
-                retries=3,
-            )
-            self._clients[subgraph_url] = Client(
-                transport=transport,
-                fetch_schema_from_transport=False,  # Disable schema fetch for compatibility
-            )
-        return self._clients[subgraph_url]
+        """
+        Create GQL client for subgraph.
+
+        Note: Create new client each time to avoid connection conflicts
+        in concurrent scenarios. Query results are cached separately.
+        """
+        transport = RequestsHTTPTransport(
+            url=subgraph_url,
+            verify=True,
+            retries=3,
+        )
+        return Client(
+            transport=transport,
+            fetch_schema_from_transport=False,  # Disable schema fetch for compatibility
+        )
 
     def query(
         self,
@@ -157,12 +159,46 @@ _client_instance: Optional[TheGraphClient] = None
 
 def get_client_instance(
     api_key: Optional[str] = None,
-    use_gateway: bool = False,
+    use_gateway: bool = None,
 ) -> TheGraphClient:
-    """Get or create global client instance."""
+    """
+    Get or create global client instance.
+
+    Args:
+        api_key: The Graph API key (optional, reads from config if not provided)
+        use_gateway: Whether to use gateway mode (optional, auto-detects from API key)
+
+    Returns:
+        TheGraphClient instance
+    """
     global _client_instance
+
     if _client_instance is None:
-        _client_instance = TheGraphClient(api_key=api_key, use_gateway=use_gateway)
+        # Try to get API key from config if not provided
+        if api_key is None:
+            try:
+                from defiagents.dataflows.config import get_config
+                config = get_config()
+                api_key = config.get("the_graph", {}).get("api_key", "")
+                logger.debug(f"Loaded The Graph API key from config: {bool(api_key)}")
+            except Exception as e:
+                logger.warning(f"Could not load config: {e}, using default settings")
+                api_key = ""
+
+        # Auto-detect gateway mode if not specified
+        if use_gateway is None:
+            use_gateway = bool(api_key)  # Use gateway if API key is available
+
+        _client_instance = TheGraphClient(
+            api_key=api_key if api_key else None,
+            use_gateway=use_gateway
+        )
+
+        if use_gateway and api_key:
+            logger.info("The Graph client initialized with Gateway mode")
+        else:
+            logger.info("The Graph client initialized with public endpoints (may have limitations)")
+
     return _client_instance
 
 

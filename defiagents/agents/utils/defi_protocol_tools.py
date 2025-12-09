@@ -52,8 +52,10 @@ def get_protocol_tvl(protocol_slug: str) -> str:
     """
     try:
         from defiagents.dataflows.defi import get_protocol_tvl as fetch_tvl
+        from defiagents.dataflows.defi.defillama import _normalize_tvl
 
-        tvl = fetch_tvl(protocol_slug)
+        tvl_value = fetch_tvl(protocol_slug)
+        tvl = _normalize_tvl(tvl_value)
 
         if tvl >= 1e9:
             tvl_str = f"${tvl/1e9:.2f}B"
@@ -84,13 +86,14 @@ def get_all_defi_protocols(limit: int = 50) -> str:
     """
     try:
         from defiagents.dataflows.defi import get_all_protocols
+        from defiagents.dataflows.defi.defillama import _normalize_tvl
 
         protocols = get_all_protocols()
 
         # Sort by TVL and limit
         sorted_protocols = sorted(
             protocols,
-            key=lambda x: x.get('tvl', 0),
+            key=lambda x: _normalize_tvl(x.get('tvl', 0)),
             reverse=True
         )[:min(limit, 100)]
 
@@ -99,7 +102,7 @@ def get_all_defi_protocols(limit: int = 50) -> str:
         for i, protocol in enumerate(sorted_protocols, 1):
             name = protocol.get('name', 'Unknown')
             slug = protocol.get('slug', '')
-            tvl = protocol.get('tvl', 0)
+            tvl = _normalize_tvl(protocol.get('tvl', 0))
             category = protocol.get('category', 'Unknown')
             chains = protocol.get('chains', [])
 
@@ -138,6 +141,7 @@ def get_chain_tvl_overview() -> str:
     """
     try:
         from defiagents.dataflows.defi import get_chains_tvl
+        from defiagents.dataflows.defi.defillama import _normalize_tvl
 
         chains = get_chains_tvl()
 
@@ -145,7 +149,7 @@ def get_chain_tvl_overview() -> str:
 
         for chain in chains[:15]:  # Top 15 chains
             name = chain.get('name', 'Unknown')
-            tvl = chain.get('tvl', 0)
+            tvl = _normalize_tvl(chain.get('tvl', 0))
             token_symbol = chain.get('tokenSymbol', '')
 
             if tvl >= 1e9:
@@ -179,6 +183,7 @@ def compare_protocols(protocol_slugs: str) -> str:
     """
     try:
         from defiagents.dataflows.defi import get_protocol_info
+        from defiagents.dataflows.defi.defillama import _normalize_tvl
 
         slugs = [s.strip() for s in protocol_slugs.split(',')]
 
@@ -189,7 +194,7 @@ def compare_protocols(protocol_slugs: str) -> str:
             try:
                 data = get_protocol_info(slug)
                 name = data.get('name', slug)
-                tvl = data.get('tvl', 0)
+                tvl = _normalize_tvl(data.get('tvl', 0))
                 category = data.get('category', 'Unknown')
                 chains = data.get('chains', [])
 
@@ -242,14 +247,14 @@ def search_protocols_by_category(category: str) -> str:
         ]
 
         # Sort by TVL
-        filtered = sorted(filtered, key=lambda x: x.get('tvl', 0), reverse=True)
+        filtered = sorted(filtered, key=lambda x: _normalize_tvl(x.get('tvl', 0)), reverse=True)
 
         result = f"## {category} Protocols ({len(filtered)} found)\n\n"
 
         for i, protocol in enumerate(filtered[:20], 1):  # Top 20
             name = protocol.get('name', 'Unknown')
             slug = protocol.get('slug', '')
-            tvl = protocol.get('tvl', 0)
+            tvl = _normalize_tvl(protocol.get('tvl', 0))
 
             if tvl >= 1e9:
                 tvl_str = f"${tvl/1e9:.2f}B"
