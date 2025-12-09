@@ -1,14 +1,14 @@
 """
-Setup script for the TradingAgents package.
+Setup script for the DeFi Agent package.
 """
 
 from setuptools import setup, find_packages
 
 setup(
-    name="tradingagents",
+    name="defiagents",
     version="0.1.0",
-    description="Multi-Agents LLM Financial Trading Framework",
-    author="TradingAgents Team",
+    description="Multi-Agents LLM DeFi Analysis Framework",
+    author="DeFi Agents Team",
     author_email="yijia.xiao@cs.ucla.edu",
     url="https://github.com/TauricResearch",
     packages=find_packages(),
@@ -25,11 +25,16 @@ setup(
         "typer>=0.9.0",
         "rich>=13.0.0",
         "questionary>=2.0.1",
+        # DeFi-specific dependencies
+        "web3>=6.0.0",
+        "gql>=3.0.0",
+        "requests-async>=0.6.2",
+        "aiohttp>=3.9.0",
     ],
     python_requires=">=3.10",
     entry_points={
         "console_scripts": [
-            "tradingagents=cli.main:app",
+            "defiagents=cli.main:app",
         ],
     },
     classifiers=[

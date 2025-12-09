@@ -1,7 +1,7 @@
 [project]
-name = "tradingagents"
+name = "defiagents"
 version = "0.1.0"
-description = "Add your description here"
+description = "Multi-Agents LLM DeFi Analysis Framework"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -32,4 +32,9 @@ dependencies = [
     "tushare>=1.4.21",
     "typing-extensions>=4.14.0",
     "yfinance>=0.2.63",
+    # DeFi-specific dependencies
+    "web3>=6.0.0",
+    "gql[all]>=3.5.0",
+    "aiohttp>=3.9.0",
+    "python-telegram-bot>=20.0.0",
 ]

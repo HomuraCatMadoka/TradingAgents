@@ -12,18 +12,18 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 from langgraph.prebuilt import ToolNode
 
-from tradingagents.agents import *
-from tradingagents.default_config import DEFAULT_CONFIG
-from tradingagents.agents.utils.memory import FinancialSituationMemory
-from tradingagents.agents.utils.agent_states import (
+from defiagents.agents import *
+from defiagents.default_config import DEFAULT_CONFIG
+from defiagents.agents.utils.memory import FinancialSituationMemory
+from defiagents.agents.utils.agent_states import (
     AgentState,
     InvestDebateState,
     RiskDebateState,
 )
-from tradingagents.dataflows.config import set_config
+from defiagents.dataflows.config import set_config
 
 # Import the new abstract tool methods from agent_utils
-from tradingagents.agents.utils.agent_utils import (
+from defiagents.agents.utils.agent_utils import (
     get_stock_data,
     get_indicators,
     get_fundamentals,

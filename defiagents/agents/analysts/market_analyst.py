@@ -1,8 +1,8 @@
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 import time
 import json
-from tradingagents.agents.utils.agent_utils import get_stock_data, get_indicators
-from tradingagents.dataflows.config import get_config
+from defiagents.agents.utils.agent_utils import get_stock_data, get_indicators
+from defiagents.dataflows.config import get_config
 
 
 def create_market_analyst(llm):
