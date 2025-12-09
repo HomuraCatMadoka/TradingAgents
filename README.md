@@ -47,6 +47,17 @@
 
 </div>
 
+---
+
+> **🔄 DeFi Agent Development Branch**
+>
+> This branch (`defi-agent-dev`) contains the transformation of TradingAgents into a **DeFi-focused analysis framework**.
+> The project integrates multi-chain DeFi data sources and specialized analysis tools for DeFi protocols, yield opportunities, and on-chain activity.
+>
+> 📖 See [docs/DeFiAgent_DEV.md](docs/DeFiAgent_DEV.md) for the complete development roadmap and implementation plan.
+
+---
+
 ## TradingAgents Framework
 
 TradingAgents is a multi-agent trading framework that mirrors the dynamics of real-world trading firms. By deploying specialized LLM-powered agents: from fundamental analysts, sentiment experts, and technical analysts, to trader, risk management team, the platform collaboratively evaluates market conditions and informs trading decisions. Moreover, these agents engage in dynamic discussions to pinpoint the optimal strategy.
@@ -150,6 +161,46 @@ An interface will appear showing results as they load, letting you track the age
 <p align="center">
   <img src="assets/cli/cli_transaction.png" width="100%" style="display: inline-block; margin: 0 2%;">
 </p>
+
+## Project Structure
+
+```
+TradingAgents/
+├── defiagents/               # Main package (renamed from tradingagents for DeFi focus)
+│   ├── agents/               # Multi-agent system
+│   │   ├── analysts/         # Analyst agents (market, fundamentals, news, etc.)
+│   │   ├── researchers/      # Bull/bear researchers and debate system
+│   │   ├── trader/           # Trading decision agent
+│   │   ├── risk_mgmt/        # Risk management team
+│   │   └── utils/            # Agent utilities and DeFi tool interfaces
+│   ├── dataflows/            # Data integration layer
+│   │   ├── defi/             # DeFi-specific data sources
+│   │   │   ├── defillama.py  # DeFi Llama API (protocol TVL, APY)
+│   │   │   ├── the_graph.py  # The Graph subgraphs (on-chain data)
+│   │   │   ├── coingecko.py  # CoinGecko API (token prices, market data)
+│   │   │   └── onchain.py    # Web3.py on-chain data access
+│   │   └── vendors/          # Legacy stock market data vendors
+│   ├── graph/                # LangGraph workflow orchestration
+│   └── default_config.py     # Configuration (LLM models, data sources, RPC endpoints)
+├── cli/                      # Command-line interface
+├── tests/                    # Test suite
+│   ├── test_defi_datasources_only.py  # DeFi data source tests
+│   └── test_defi_integration.py       # Full integration tests
+├── examples/                 # Example usage scripts
+│   └── example_usage.py      # Basic usage example
+├── docs/                     # Documentation
+│   ├── DeFiAgent_DEV.md      # DeFi Agent development roadmap
+│   └── defi_protocol_research_prompt.md  # Protocol research guide
+└── assets/                   # Images and static files
+```
+
+### Key Components
+
+- **Multi-Agent System**: Specialized agents for market analysis, research, trading, and risk management
+- **DeFi Data Integration**: Multi-chain support (Ethereum, Arbitrum, Optimism, Base, Polygon)
+- **LangGraph Orchestration**: Flexible workflow engine with state management
+- **Memory System**: ChromaDB + OpenAI embeddings for learning and reflection
+- **Tool Interfaces**: LangChain-compatible tools for protocol analysis, pool data, wallet tracking
 
 ## TradingAgents Package
 
