@@ -19,6 +19,10 @@ async def _run_status_flow(monkeypatch, handler_factory):
     handler, fake_time, handlers_module, _ = handler_factory(admin_ids="101", per_user="3", window="60")
     handler.formatter = TelegramFormatter()
 
+    # 清除测试缓存，避免旧数据干扰测试
+    if handler.cache_client:
+        handler.cache_client.clear_prefix("defi_analysis:")
+
     # Cover stats window reset and admin rate-limit bypass.
     handler.global_stats["window_start"] = fake_time() - handler.config.rate_limit_window - 1
     handler._reset_stats_window_if_needed(fake_time())
@@ -191,7 +195,7 @@ async def _run_status_flow(monkeypatch, handler_factory):
 
     monkeypatch.setattr(handler, "_run_agent_analysis", failing_analysis)
     failure_update = FakeUpdate(user_id=210, text="analysis")
-    await handler._perform_analysis(failure_update, "query text")
+    await handler._perform_analysis(failure_update, "failing query")  # 使用不同的查询避免缓存命中
     assert any("分析出错" in reply for reply in failure_update.message.replies)
 
     async def timeout_analysis(query: str):
@@ -199,7 +203,7 @@ async def _run_status_flow(monkeypatch, handler_factory):
 
     monkeypatch.setattr(handler, "_run_agent_analysis", timeout_analysis)
     timeout_update = FakeUpdate(user_id=213, text="analysis")
-    await handler._perform_analysis(timeout_update, "query text")
+    await handler._perform_analysis(timeout_update, "timeout query")  # 使用不同的查询避免缓存命中
     assert any("超时" in reply for reply in timeout_update.message.replies)
 
 

@@ -61,6 +61,7 @@ class DeFiTelegramBot:
         application.add_handler(CommandHandler("compare", self.handlers.compare_command))
         application.add_handler(CommandHandler("status", self.handlers.status_command))
         application.add_handler(CommandHandler("clear_cache", self.handlers.clear_cache_command))
+        application.add_handler(CommandHandler("chart", self.handlers.chart_command))
 
         # 文本消息处理器（自然语言）
         application.add_handler(

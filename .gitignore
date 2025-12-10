@@ -9,3 +9,9 @@ eval_results/
 eval_data/
 *.egg-info/
 .env
+
+# Test coverage
+.coverage
+coverage.json
+htmlcov/
+.pytest_cache/

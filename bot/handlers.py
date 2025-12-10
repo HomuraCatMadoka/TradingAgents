@@ -457,6 +457,40 @@ class CommandHandlers:
                         parse_mode="Markdown"
                     )
 
+                # 如果没有指定协议但有其他条件，推荐协议
+                if not intent.protocol_name and (
+                    intent.risk_preference or intent.protocol_type or intent.target_apy or intent.chain
+                ):
+                    from defiagents.recommender import get_recommender
+
+                    recommender = get_recommender()
+                    recommendations = recommender.recommend(
+                        risk_preference=intent.risk_preference,
+                        protocol_type=intent.protocol_type,
+                        min_apy=intent.target_apy,
+                        chain=intent.chain,
+                        investment_amount=intent.investment_amount,
+                        top_n=3,
+                    )
+
+                    if recommendations:
+                        # 格式化推荐消息
+                        user_criteria = {
+                            "risk_preference": intent.risk_preference,
+                            "protocol_type": intent.protocol_type,
+                            "min_apy": intent.target_apy,
+                            "chain": intent.chain,
+                        }
+                        recommendation_msg = recommender.format_recommendation_message(
+                            recommendations, user_criteria
+                        )
+                        await update.message.reply_text(
+                            recommendation_msg,
+                            parse_mode="Markdown"
+                        )
+                        logger.info(f"Recommended {len(recommendations)} protocols to user {user_id}")
+                        return  # 推荐后不再执行分析
+
         # 执行分析
         await self._perform_analysis(update, user_input)
 
@@ -578,8 +612,17 @@ class CommandHandlers:
             # 缓存写入
             if cache_allowed and cache_key and result:
                 try:
+                    # 添加时间戳到结果
                     result["_cached_at"] = time.time()
-                    self.cache_client.set(cache_key, result)  # type: ignore[union-attr]
+
+                    # 准备可序列化的结果（移除 messages 字段）
+                    cacheable_result = {k: v for k, v in result.items() if k != "messages"}
+
+                    success = self.cache_client.set(cache_key, cacheable_result)  # type: ignore[union-attr]
+                    if success:
+                        logger.info("Cache write succeeded for %s", cache_key)
+                    else:
+                        logger.warning("Cache write returned False for %s", cache_key)
                 except Exception as exc:  # pragma: no cover - defensive downgrade
                     logger.warning("Cache write failed for %s: %s", cache_key, exc)
 
@@ -645,3 +688,149 @@ class CommandHandlers:
         )
 
         return result
+
+    async def chart_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        生成数据可视化图表
+
+        用法：
+            /chart tvl <protocol> - TVL趋势图(30天)
+            /chart apy <protocol1> <protocol2> ... - APY对比图
+            /chart risk <protocol> - 风险评分雷达图
+            /chart yield <protocol> - 收益来源饼图
+            /chart compare <protocol1> <protocol2> - 多协议TVL对比
+        """
+        user_id = update.effective_user.id
+
+        # 速率限制检查（管理员豁免）
+        if not self.config.is_admin(user_id):
+            is_allowed, rejection_reason = self.check_rate_limit(user_id)
+            if not is_allowed:
+                await update.message.reply_text(
+                    self.formatter.format_error(rejection_reason)
+                )
+                return
+
+        # 解析参数
+        if not context.args or len(context.args) < 2:
+            help_text = """📊 **图表生成命令**
+
+**用法：**
+`/chart tvl <协议>` - TVL趋势图(30天)
+`/chart apy <协议1> <协议2> ...` - APY对比图
+`/chart risk <协议>` - 风险评分雷达图
+`/chart yield <协议>` - 收益来源饼图
+`/chart compare <协议1> <协议2>` - 多协议TVL对比
+
+**示例：**
+`/chart tvl aave-v3`
+`/chart apy aave-v3 compound-v3 uniswap-v3`
+`/chart risk uniswap-v3`
+`/chart yield aave-v3`
+`/chart compare aave-v3 compound-v3`"""
+            await update.message.reply_text(help_text, parse_mode="Markdown")
+            return
+
+        chart_type = context.args[0].lower()
+        protocols = context.args[1:]
+
+        # 发送处理中消息
+        processing_msg = await update.message.reply_text(
+            f"🔄 正在生成 {chart_type.upper()} 图表...",
+            parse_mode="Markdown"
+        )
+
+        try:
+            # 导入可视化模块
+            from defiagents.visualization import (
+                generate_tvl_chart,
+                generate_apy_comparison_chart,
+                generate_risk_radar_chart,
+                generate_yield_breakdown_chart,
+            )
+            from defiagents.visualization.data_fetcher import (
+                get_protocol_tvl_history,
+                get_protocol_apy_comparison,
+                get_risk_assessment_data,
+                get_yield_breakdown_data,
+                get_multiple_protocols_tvl_history,
+            )
+            from defiagents.visualization.charts import generate_multi_protocol_tvl_comparison
+
+            chart_buffer = None
+            caption = ""
+
+            if chart_type == "tvl":
+                # TVL趋势图
+                protocol = protocols[0]
+                tvl_history = get_protocol_tvl_history(protocol, days=30)
+                chart_buffer = generate_tvl_chart(protocol, tvl_history)
+                caption = f"📈 {protocol} TVL趋势图（30天）"
+
+            elif chart_type == "apy":
+                # APY对比图
+                apy_data = get_protocol_apy_comparison(protocols)
+                chart_buffer = generate_apy_comparison_chart(apy_data)
+                caption = f"📊 {len(protocols)}个协议 APY对比"
+
+            elif chart_type == "risk":
+                # 风险雷达图
+                protocol = protocols[0]
+                risk_data = get_risk_assessment_data(protocol)
+                chart_buffer = generate_risk_radar_chart(risk_data)
+                caption = f"🎯 {protocol} 风险评估雷达图"
+
+            elif chart_type == "yield":
+                # 收益分解饼图
+                protocol = protocols[0]
+                yield_data = get_yield_breakdown_data(protocol)
+                chart_buffer = generate_yield_breakdown_chart(yield_data)
+                caption = f"🥧 {protocol} 收益来源分解"
+
+            elif chart_type == "compare":
+                # 多协议TVL对比
+                if len(protocols) < 2:
+                    await processing_msg.edit_text("❌ compare 模式至少需要2个协议")
+                    return
+                tvl_comparison_data = get_multiple_protocols_tvl_history(protocols, days=30)
+                chart_buffer = generate_multi_protocol_tvl_comparison(tvl_comparison_data)
+                caption = f"📈 {len(protocols)}个协议 TVL对比（30天）"
+
+            else:
+                await processing_msg.edit_text(
+                    f"❌ 不支持的图表类型：{chart_type}\n"
+                    f"可用类型：tvl, apy, risk, yield, compare"
+                )
+                return
+
+            if chart_buffer:
+                # 删除处理消息
+                try:
+                    await processing_msg.delete()
+                except Exception:
+                    pass
+
+                # 发送图表
+                chart_buffer.seek(0)  # 重置指针
+                await update.message.reply_photo(
+                    photo=chart_buffer,
+                    caption=caption,
+                    parse_mode="Markdown"
+                )
+
+                logger.info(f"Chart generated: type={chart_type}, protocols={protocols}, user_id={user_id}")
+
+        except Exception as e:
+            logger.error(f"Chart generation failed: {e}", exc_info=True)
+            try:
+                await processing_msg.edit_text(
+                    self.formatter.format_error(
+                        f"图表生成失败：{str(e)[:100]}\n\n请检查协议名称是否正确。"
+                    )
+                )
+            except Exception:
+                await update.message.reply_text(
+                    self.formatter.format_error(
+                        f"图表生成失败：{str(e)[:100]}\n\n请检查协议名称是否正确。"
+                    )
+                )

@@ -66,6 +66,14 @@ class TelegramFormatter:
    对比两个协议的各项指标
    示例：`/compare aave-v3 compound-v3`
 
+📈 `/chart <类型> <协议...>`
+   生成数据可视化图表
+   示例：`/chart tvl aave-v3`
+   类型：tvl, apy, risk, yield, compare
+
+💡 `/status`
+   查看系统状态和健康度
+
 ❓ `/help`
    显示此帮助信息
 

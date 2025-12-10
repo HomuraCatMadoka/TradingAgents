@@ -1,7 +1,7 @@
 """
-DeFi Agent�h!W
+DeFi Agent 安全模块
 
-Л�e��:�e�K���֟�
+提供输入净化、注入检测、意图提取等安全功能。
 """
 from .input_sanitizer import (
     InputSanitizer,
@@ -17,15 +17,15 @@ from .injection_detector import (
 )
 
 __all__ = [
-    # ;���
+    # 输入净化
     "InputSanitizer",
     "SanitizationResult",
     "get_sanitizer",
 
-    # ���
+    # 意图提取
     "IntentExtractor",
     "InvestmentIntent",
 
-    # �e�K
+    # 注入检测
     "InjectionDetector",
 ]
