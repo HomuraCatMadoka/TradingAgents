@@ -854,30 +854,102 @@ class CommandHandlers:
 
     async def _run_agent_analysis(self, query: str) -> Dict:  # pragma: no cover - integration path
         """
-        运行Agent分析（异步包装）
+        运行 Agent 分析（异步包装 + 429 错误自动重试）
 
         Args:
             query: 分析查询
 
         Returns:
             分析结果字典
+
+        Raises:
+            TimeoutError: 如果超时
+            RuntimeError: 如果所有 API key 都耗尽
         """
-        # 在线程池中运行同步的Agent调用
-        loop = asyncio.get_event_loop()
+        max_retries = 3  # 最多重试 3 次
+        retry_count = 0
 
-        def _sync_analysis():
-            result, signal = self.agent.propagate(
-                company_name=query,
-                trade_date=datetime.now().strftime("%Y-%m-%d")
-            )
-            return result
+        while retry_count < max_retries:
+            try:
+                # 在线程池中运行同步的 Agent 调用
+                loop = asyncio.get_event_loop()
 
-        result = await asyncio.wait_for(
-            loop.run_in_executor(None, _sync_analysis),
-            timeout=self.config.analysis_timeout
-        )
+                def _sync_analysis():
+                    result, signal = self.agent.propagate(
+                        company_name=query,
+                        trade_date=datetime.now().strftime("%Y-%m-%d")
+                    )
+                    return result
 
-        return result
+                result = await asyncio.wait_for(
+                    loop.run_in_executor(None, _sync_analysis),
+                    timeout=self.config.analysis_timeout
+                )
+
+                return result
+
+            except Exception as e:
+                error_msg = str(e)
+
+                # 检测 429 配额错误
+                if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+                    retry_count += 1
+                    logger.warning(f"API quota exceeded (429), retry {retry_count}/{max_retries}")
+
+                    # 尝试切换 API key（如果配置了多 key）
+                    try:
+                        from gemini_config import GEMINI_CONFIG
+                        google_api_keys = GEMINI_CONFIG.get("google_api_keys", [])
+
+                        if len(google_api_keys) > 1:
+                            # 多 key 模式：标记并切换
+                            from defiagents.key_pool import mark_key_exhausted, get_next_google_api_key
+
+                            # 获取当前使用的 key（通过 agent 的 LLM 实例）
+                            current_key = None
+                            if self._agent and hasattr(self._agent, 'quick_thinking_llm'):
+                                current_key = getattr(self._agent.quick_thinking_llm, 'google_api_key', None)
+
+                            if current_key:
+                                mark_key_exhausted(current_key)
+                                logger.info(f"Marked key {current_key[:10]}... as exhausted")
+
+                            # 切换到下一个 key
+                            next_key = get_next_google_api_key(google_api_keys)
+                            if next_key:
+                                logger.info(f"Switching to next key: {next_key[:10]}... (retry {retry_count}/{max_retries})")
+                                # 重新加载 agent（使用下一个 key）
+                                self._agent = None
+                                await asyncio.sleep(2)
+                                continue  # 重试
+                            else:
+                                logger.warning("All API keys exhausted, waiting for cooldown...")
+                                await asyncio.sleep(15)
+                                self._agent = None
+                                continue
+                        else:
+                            # 单 key 模式：等待配额恢复
+                            if retry_count < max_retries:
+                                wait_time = 15 * retry_count  # 指数退避：15s, 30s, 45s
+                                logger.warning(f"Single key mode, waiting {wait_time}s before retry")
+                                await asyncio.sleep(wait_time)
+                                continue
+                            else:
+                                raise RuntimeError(
+                                    f"API quota exhausted after {max_retries} retries. "
+                                    "Please wait 1 minute or configure multiple API keys (GOOGLE_API_KEYS=key1,key2,key3)."
+                                ) from e
+                    except ImportError:
+                        # 无法导入 gemini_config，使用默认重试
+                        logger.error("Failed to import gemini_config, using default retry")
+                        if retry_count < max_retries:
+                            await asyncio.sleep(15)
+                            continue
+                        else:
+                            raise
+                else:
+                    # 非 429 错误，直接抛出
+                    raise
 
     async def chart_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """

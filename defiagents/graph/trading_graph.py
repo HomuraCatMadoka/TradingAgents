@@ -117,8 +117,33 @@ class TradingAgentsGraph:
             self.deep_thinking_llm = ChatAnthropic(model=self.config["deep_think_llm"], base_url=self.config["backend_url"])
             self.quick_thinking_llm = ChatAnthropic(model=self.config["quick_think_llm"], base_url=self.config["backend_url"])
         elif self.config["llm_provider"].lower() == "google":
-            self.deep_thinking_llm = ChatGoogleGenerativeAI(model=self.config["deep_think_llm"])
-            self.quick_thinking_llm = ChatGoogleGenerativeAI(model=self.config["quick_think_llm"])
+            # 支持多 API Key 轮询
+            google_api_keys = self.config.get("google_api_keys", [])
+
+            if google_api_keys and len(google_api_keys) > 1:
+                # 多 key 模式：使用轮询算法
+                from defiagents.key_pool import get_next_google_api_key
+                current_key = get_next_google_api_key(google_api_keys)
+
+                if current_key:
+                    logger.info(f"Using Google API Key pool ({len(google_api_keys)} keys), selected key: {current_key[:10]}...")
+                else:
+                    # 所有 key 都在冷却中，使用第一个并等待
+                    current_key = google_api_keys[0]
+                    logger.warning(f"All keys in cooldown, using first key with retry")
+            else:
+                # 单 key 模式（向后兼容）
+                current_key = google_api_keys[0] if google_api_keys else None
+                logger.info(f"Using single Google API Key: {current_key[:10] if current_key else 'None'}...")
+
+            self.deep_thinking_llm = ChatGoogleGenerativeAI(
+                model=self.config["deep_think_llm"],
+                google_api_key=current_key
+            )
+            self.quick_thinking_llm = ChatGoogleGenerativeAI(
+                model=self.config["quick_think_llm"],
+                google_api_key=current_key
+            )
         else:
             raise ValueError(f"Unsupported LLM provider: {self.config['llm_provider']}")
         
