@@ -388,6 +388,12 @@ DEX：Uniswap, Curve, Balancer
 
     def _extract_key_points(self, text: str, max_points: int = 5) -> str:
         """从长文本中提取关键点"""
+        # 处理 text 可能是 list 的情况（防御性编程）
+        if isinstance(text, list):
+            text = "\n\n".join(str(item) for item in text)
+        elif not isinstance(text, str):
+            text = str(text)
+
         # 按段落分割
         paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
 

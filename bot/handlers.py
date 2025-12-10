@@ -279,6 +279,25 @@ class CommandHandlers:
             parse_mode="Markdown"
         )
 
+    async def myid_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """显示用户的 Telegram User ID"""
+        user_id = update.effective_user.id
+        username = update.effective_user.username or "无用户名"
+
+        # 使用纯文本避免 Markdown 解析错误
+        message = (
+            f"🆔 您的 Telegram 信息\n\n"
+            f"User ID: {user_id}\n"
+            f"用户名: @{username}\n\n"
+            f"💡 配置管理员权限:\n"
+            f"1. 复制上方 User ID\n"
+            f"2. 编辑 .env 文件，添加:\n"
+            f"   BOT_ADMIN_USER_IDS={user_id}\n"
+            f"3. 重启 Bot\n"
+            f"4. 管理员可使用 /status（详细）和 /audit_stats"
+        )
+        await update.message.reply_text(message)  # 不使用 parse_mode
+
     async def analyze_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
         处理/analyze命令
