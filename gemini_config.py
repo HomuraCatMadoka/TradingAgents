@@ -14,12 +14,12 @@ GEMINI_CONFIG = DEFAULT_CONFIG.copy()
 # 配置Gemini
 GEMINI_CONFIG["llm_provider"] = "google"
 
-# 推荐模型配置（免费）- 使用Gemini 2.0实验版
-GEMINI_CONFIG["quick_think_llm"] = "gemini-2.0-flash-exp"    # 快速模型 - 用于分析师
-GEMINI_CONFIG["deep_think_llm"] = "gemini-2.0-flash-exp"     # 强大模型 - 用于管理员
+# 推荐模型配置（免费）- 使用 Gemini 2.0 Flash Experimental
+GEMINI_CONFIG["quick_think_llm"] = "gemini-2.0-flash-exp"    # 快速模型 - 10 RPM
+GEMINI_CONFIG["deep_think_llm"] = "gemini-2.0-flash-exp"     # 强大模型 - 10 RPM
 
-# 备注：gemini-1.5系列目前在v1beta API中不可用
-# 如需使用1.5版本，请参考Google AI Studio文档
+# 备注：gemini-2.0-flash-exp 配额：10 requests/分钟（免费层）
+# 如需更高配额，需等待配额恢复或升级 API key
 
 # 验证API key
 api_key = os.getenv("GOOGLE_API_KEY")
