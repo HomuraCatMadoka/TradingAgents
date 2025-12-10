@@ -52,6 +52,12 @@ class AgentState(MessagesState):
     protocol_of_interest: Annotated[str, "DeFi protocol that we are interested in analyzing"]
     chain: Annotated[str, "Blockchain network (ethereum, arbitrum, optimism, etc.)"]
     investment_amount: Annotated[Optional[float], "Investment amount in USD for strategy analysis"]
+    protocol_whitelist_status: Annotated[
+        Optional[str], "Result status from protocol whitelist validation"
+    ]
+    whitelist_result: Annotated[
+        Optional[dict], "Full whitelist result payload for downstream consumers"
+    ]
     trade_date: Annotated[str, "What date we are analyzing at"]
 
     # Legacy compatibility (deprecated, use protocol_of_interest instead)

@@ -15,6 +15,9 @@
 - **[CLAUDE.md](../CLAUDE.md)** ⭐ - 开发者快速参考（架构、常用命令、关键模式）
 - **[开发日志](../DeFiAgent_CHANGELOG.md)** - 完整开发历史和问题修复记录（只追加）
 - **[测试文档](../测试文档.md)** - 协议测试状态、测试用例、性能基准
+- **[贡献指南](CONTRIBUTING.md)** - 分支、提交规范、PR 流程、环境搭建
+- **[API 设计规范](API_DESIGN.md)** - REST 命名、错误包、分页、版本策略
+- **[前端开发指南](FRONTEND_GUIDE.md)** - 组件/状态/样式/安全约定
 
 ### 📋 规划文档
 - **[后续开发计划](Future_Development_Plan.md)** - 中/低/长期优先级功能列表（已合并到 PROJECT_STATUS.md）
@@ -50,6 +53,9 @@
 | [开发日志](../DeFiAgent_CHANGELOG.md) | Phase 1-2 完整开发记录（历史，只追加） | 2025-12-10 |
 | [测试文档](../测试文档.md) | 测试状态、协议覆盖、待优化项 | 2025-12-10 |
 | [Bot 测试指南](Telegram_Bot_Testing_Guide.md) | 手动测试流程和验收标准 | 2025-12-10 |
+| [贡献指南](CONTRIBUTING.md) | 分支策略、提交规范、PR Checklist、常见问题 | 2025-12-10 |
+| [API 设计规范](API_DESIGN.md) | 路径命名、错误响应、分页/排序、版本策略 | 2025-12-10 |
+| [前端开发指南](FRONTEND_GUIDE.md) | 目录结构、状态管理、样式、安全与性能 | 2025-12-10 |
 
 ### 规划文档（Planning Docs）
 项目路线图和改进计划：

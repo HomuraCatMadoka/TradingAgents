@@ -121,6 +121,37 @@ def handler_factory(monkeypatch):
         config = importlib.reload(config)
         handlers = importlib.reload(handlers)
 
+        class DummyWhitelist:
+            def __init__(self, *args, **kwargs):
+                self.calls = []
+
+            def check(self, slug_or_name, chain=None):
+                self.calls.append((slug_or_name, chain))
+                return {
+                    "status": "trusted",
+                    "protocol_slug": slug_or_name or "",
+                    "metrics": {},
+                    "confidence_score": 1.0,
+                    "data_sources": [],
+                    "reason": "stubbed",
+                }
+
+        class DummyValidator:
+            def __init__(self, *args, **kwargs):
+                self.calls = []
+
+            def validate(self, text, context=None):
+                self.calls.append((text, context))
+                return {
+                    "is_safe": True,
+                    "issues": [],
+                    "patched_text": text or "",
+                    "original_text": text or "",
+                }
+
+        monkeypatch.setattr(handlers, "ProtocolWhitelist", DummyWhitelist)
+        monkeypatch.setattr(handlers, "OutputValidator", DummyValidator)
+
         fake_time = TimeStub(start_time)
         monkeypatch.setattr(handlers.time, "time", fake_time)
 

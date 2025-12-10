@@ -37,7 +37,11 @@ cp .env.example .env
 **可选变量**：
 - `OPENAI_API_KEY` - 如果使用 OpenAI 替代 Gemini
 - `BOT_RATE_LIMIT_PER_USER` - Bot 速率限制（默认 10次/小时）
-- `BOT_ADMIN_USER_IDS` - 管理员用户 ID（逗号分隔，无速率限制）
+- `BOT_ADMIN_USER_IDS` - 管理员用户 ID（逗号分隔，无速率限制，可访问 `/status` 详细统计和 `/clear_cache`）
+- `REDIS_URL` - Redis 连接 URL（默认 redis://localhost:6379/0，用于缓存和速率限制）
+- `BOT_CACHE_ENABLED` - 是否启用缓存（默认 true）
+- `BOT_CACHE_TTL_SECONDS` - 缓存有效期（默认 1800 = 30分钟）
+- `BOT_ENABLE_PROGRESS` - 是否显示进度反馈（默认 true）
 - `ETHEREUM_RPC_URL` 等 - 自定义 RPC 节点（可选，有免费公共节点）
 
 完整变量列表参见 `.env.example`。
@@ -86,6 +90,13 @@ python -m cli.main
 python3 run_bot.py
 # 或使用 systemd/PM2 守护进程部署（参考 docs/Telegram_Bot_Guide.md）
 ```
+
+**Bot 可用命令**：
+- `/analyze <协议名>` - 完整 DeFi 协议分析（5阶段流水线）
+- `/status` - 系统状态和数据源健康检查（管理员可见详细统计）
+- `/chart <类型> <协议>` - 数据可视化图表（tvl/apy/risk/yield/compare）
+- `/clear_cache` - 清除 Redis 分析缓存（仅管理员）
+- `/help` - 显示帮助和示例
 
 **Python API 模式**：
 ```python
@@ -406,6 +417,8 @@ class DeFiTelegramBot:
     def setup_handlers(self, application):
         # 命令处理器
         application.add_handler(CommandHandler("analyze", analyze_command))
+        application.add_handler(CommandHandler("status", status_command))
+        application.add_handler(CommandHandler("chart", chart_command))
         # 自然语言处理器
         application.add_handler(MessageHandler(filters.TEXT, handle_message))
         # 错误处理器
@@ -414,17 +427,27 @@ class DeFiTelegramBot:
 
 **关键流程**：
 1. 用户发送消息 → `handle_message()`
-2. 速率限制检查（10次/小时/用户）
+2. 速率限制检查（10次/小时/用户，Redis 持久化）
 3. 输入净化（`InputSanitizer`）
-4. 异步调用 DeFi Agent（`loop.run_in_executor()`）
-5. 实时更新进度消息（每10秒，8步进度）
-6. 格式化结果为 Telegram Markdown
-7. 分多条消息发送（避免4096字符限制）
+4. Redis 缓存检查（30分钟 TTL，命中率 >80%）
+5. 异步调用 DeFi Agent（`loop.run_in_executor()`）
+6. 实时更新进度消息（每10秒，8步进度条）
+7. 格式化结果为 Telegram Markdown
+8. 分多条消息发送（避免4096字符限制）
+9. 写入 Redis 缓存（带 `_cached_at` 时间戳）
+
+**关键特性**：
+- **缓存层**（`bot/cache.py`）：Redis 客户端，30分钟 TTL，响应时间从 108秒降至 <1秒
+- **进度反馈**（`bot/handlers.py:538-604`）：▓▓▓░░░ 进度条 + 百分比 + 步骤描述
+- **数据可视化**（`defiagents/visualization/`）：5种图表类型（TVL趋势/APY对比/风险雷达/收益饼图/协议对比）
+- **协议推荐**（`defiagents/recommender.py`）：10个协议数据库，多条件匹配评分算法
+- **健康检查**（`/status` 命令）：4个数据源健康度，5分钟缓存，双视图格式（普通/管理员）
 
 **关键文件**：
-- `bot/handlers.py` - 命令处理和 Agent 调用
-- `bot/formatters.py` - 消息格式化（欢迎/帮助/报告/错误）
-- `bot/config.py` - Bot 配置管理
+- `bot/handlers.py` - 命令处理和 Agent 调用（含缓存逻辑、进度更新、图表生成）
+- `bot/formatters.py` - 消息格式化（欢迎/帮助/报告/错误/进度/状态）
+- `bot/config.py` - Bot 配置管理（速率限制/缓存/管理员）
+- `bot/cache.py` - Redis 缓存客户端（87 lines）
 - `run_bot.py` - 启动脚本
 
 ## 关键设计决策
@@ -515,6 +538,35 @@ BOT_RATE_LIMIT_WINDOW=3600       # 时间窗口（秒）
    ```
 
 2. 预期成本：$0.15-0.30/次分析（GPT-4o-mini）
+
+### Redis 部署和缓存管理
+
+**启动 Redis**（本地开发）：
+```bash
+# macOS
+brew install redis
+brew services start redis
+
+# Linux
+sudo apt-get install redis-server
+sudo systemctl start redis
+
+# Docker
+docker run -d -p 6379:6379 redis:alpine
+```
+
+**缓存管理命令**：
+- `/clear_cache` - 清除所有分析缓存（仅管理员）
+- 手动清除：`redis-cli FLUSHDB`（清空当前数据库）
+- 查看缓存键：`redis-cli KEYS "defi_analysis:*"`
+- 检查缓存大小：`redis-cli DBSIZE`
+
+**缓存性能**：
+- 命中率：>80%（相同协议30分钟内重复查询）
+- 响应时间：缓存命中 <1秒 vs 完整分析 105-108秒
+- 成本节省：~95% LLM 成本
+
+**注意**：如果 Redis 不可用，系统会自动禁用缓存并继续运行（优雅降级）。
 
 ## 调试和日志
 

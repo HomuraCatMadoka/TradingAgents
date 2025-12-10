@@ -8,7 +8,15 @@
 
 **最后更新**: 2025-12-10
 **当前阶段**: Phase 3 进行中（性能优化与功能增强）
-**本次更新**: 完成数据可视化和自然语言投资查询功能
+**本次更新**: 完成 Miniapp Task 0.4 前端 scaffold（路由/状态/服务层）
+
+---
+
+## 📌 Miniapp Phase 0 进展（Telegram Dashboard）
+- [x] Task 0.3: 数据库设计 + Alembic 初始迁移（miniapp/backend）
+- [x] Task 0.4: 前端 scaffold（路由/状态/服务层）
+- [ ] Task 0.5: 开发指南与模板
+- [ ] Task 0.6: CI/CD（前后端工作流）
 
 ---
 

@@ -15,10 +15,12 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from defiagents.dataflows.defi import health_checker
+from defiagents.security.output_validator import OutputValidator, ValidationContext
+from defiagents.security.protocol_whitelist import ProtocolWhitelist, WhitelistResult
 
 from .cache import CacheClient
 from .config import get_bot_config, is_admin
-from .formatters import TelegramFormatter, add_cache_marker
+from .formatters import TelegramFormatter, add_cache_marker, format_whitelist_warning
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,10 @@ class CommandHandlers:
         }
         self._lock = Lock()
         self.start_time = time.time()
+
+        # 安全验证层
+        self.output_validator = OutputValidator()
+        self.whitelist = ProtocolWhitelist()
 
         # 缓存客户端（Redis 不可用时自动降级）
         self.cache_client: Optional[CacheClient] = None
@@ -85,6 +91,19 @@ class CommandHandlers:
             self._sanitizer = get_sanitizer(strict_mode=False)
             logger.info("Input sanitizer loaded")
         return self._sanitizer
+
+    def _check_protocol_whitelist(
+        self, protocol_name: Optional[str], chain: Optional[str] = None
+    ) -> Optional[WhitelistResult]:
+        """Run whitelist check with defensive fallback."""
+        if not protocol_name:
+            return None
+
+        try:
+            return self.whitelist.check(protocol_name, chain=chain)
+        except Exception as exc:  # pragma: no cover - defensive downgrade
+            logger.warning("Whitelist check failed for %s: %s", protocol_name, exc)
+            return None
 
     def _reset_stats_window_if_needed(self, now: float) -> None:
         """Reset global counters when the tracking window rolls over."""
@@ -270,8 +289,31 @@ class CommandHandlers:
 
         protocol_name = " ".join(context.args)
 
+        whitelist_result = self._check_protocol_whitelist(protocol_name)
+        if whitelist_result:
+            status = whitelist_result.get("status")
+            warning = format_whitelist_warning(
+                protocol_name, whitelist_result.get("reason"), status
+            )
+            if status == "suspicious":
+                await update.message.reply_text(
+                    f"{warning}\n\n请确认协议来源可靠后再重试。",
+                    parse_mode="Markdown",
+                )
+                return
+            if status == "unverified":
+                await update.message.reply_text(
+                    warning,
+                    parse_mode="Markdown",
+                )
+
         # 调用分析
-        await self._perform_analysis(update, protocol_name)
+        await self._perform_analysis(
+            update,
+            protocol_name,
+            protocol_name=whitelist_result["protocol_slug"] if whitelist_result else protocol_name,
+            whitelist_result=whitelist_result,
+        )
 
     async def strategy_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
@@ -414,6 +456,9 @@ class CommandHandlers:
         """
         user_id = update.effective_user.id
         user_input = update.message.text
+        protocol_for_check: Optional[str] = None
+        investment_amount: Optional[float] = None
+        whitelist_result: Optional[WhitelistResult] = None
 
         # 速率限制检查
         is_allowed, rejection_reason = self.check_rate_limit(user_id)
@@ -443,8 +488,10 @@ class CommandHandlers:
                 intent = sanitization_result.intent
                 if intent.protocol_name:
                     params.append(f"✓ 协议：{intent.protocol_name}")
+                    protocol_for_check = intent.protocol_name
                 if intent.investment_amount:
                     params.append(f"✓ 金额：${intent.investment_amount:,.0f}")
+                    investment_amount = intent.investment_amount
                 if intent.risk_preference:
                     params.append(f"✓ 风险：{intent.risk_preference}")
                 if intent.target_apy:
@@ -491,8 +538,32 @@ class CommandHandlers:
                         logger.info(f"Recommended {len(recommendations)} protocols to user {user_id}")
                         return  # 推荐后不再执行分析
 
+        whitelist_result = self._check_protocol_whitelist(protocol_for_check)
+        if whitelist_result:
+            status = whitelist_result.get("status")
+            warning = format_whitelist_warning(
+                protocol_for_check or user_input, whitelist_result.get("reason"), status
+            )
+            if status == "suspicious":
+                await update.message.reply_text(
+                    f"{warning}\n\n请确认后再继续。如果确认无误，请重新发送请求。",
+                    parse_mode="Markdown",
+                )
+                return
+            if status == "unverified":
+                await update.message.reply_text(
+                    warning,
+                    parse_mode="Markdown",
+                )
+
         # 执行分析
-        await self._perform_analysis(update, user_input)
+        await self._perform_analysis(
+            update,
+            user_input,
+            protocol_name=whitelist_result["protocol_slug"] if whitelist_result else protocol_for_check,
+            investment_amount=investment_amount,
+            whitelist_result=whitelist_result,
+        )
 
     def _generate_query_hash(self, **params: Any) -> str:
         """Generate a stable 8-char MD5 hash from sorted query params."""
@@ -520,7 +591,15 @@ class CommandHandlers:
         messages[0] = add_cache_marker(messages[0], timestamp)
         return messages
 
-    async def _perform_analysis(self, update: Update, query: str):
+    async def _perform_analysis(
+        self,
+        update: Update,
+        query: str,
+        *,
+        protocol_name: Optional[str] = None,
+        investment_amount: Optional[float] = None,
+        whitelist_result: Optional[WhitelistResult] = None,
+    ):
         """
         执行DeFi分析
 
@@ -605,6 +684,10 @@ class CommandHandlers:
 
             # 获取结果
             result = await analysis_task
+            normalized_protocol = protocol_name or (whitelist_result or {}).get("protocol_slug")
+            if isinstance(result, dict) and whitelist_result:
+                result["whitelist_result"] = whitelist_result
+            result = self._apply_output_validation(result, normalized_protocol, investment_amount)
             duration = time.time() - start_time
 
             logger.info(f"Analysis completed in {duration:.2f}s for query: {query[:50]}")
@@ -661,6 +744,36 @@ class CommandHandlers:
         finally:
             duration = time.time() - start_time
             self._record_response_time(duration)
+
+    def _apply_output_validation(
+        self,
+        result: Optional[Dict[str, Any]],
+        protocol_name: Optional[str],
+        investment_amount: Optional[float],
+    ) -> Optional[Dict[str, Any]]:
+        """Apply output validation on final decision."""
+        if not isinstance(result, dict):
+            return result
+
+        final_decision = result.get("final_decision")
+        if final_decision is None:
+            return result
+
+        context: ValidationContext = {
+            "agent_name": "Portfolio Manager",
+            "protocol_name": protocol_name or "",
+            "investment_amount": investment_amount,
+        }
+
+        try:
+            validation = self.output_validator.validate(final_decision, context)
+        except Exception as exc:  # pragma: no cover - defensive downgrade
+            logger.warning("Output validation failed: %s", exc)
+            return result
+
+        result["final_decision"] = validation.get("patched_text", final_decision)
+        result["validation_issues"] = validation.get("issues", [])
+        return result
 
     async def _run_agent_analysis(self, query: str) -> Dict:  # pragma: no cover - integration path
         """

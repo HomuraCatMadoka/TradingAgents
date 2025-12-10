@@ -9,6 +9,7 @@ from defiagents.agents import *
 from defiagents.agents.utils.agent_states import AgentState
 
 from .conditional_logic import ConditionalLogic
+from .node_wrappers import wrap_agent_node_with_validation
 
 
 class GraphSetup:
@@ -61,12 +62,18 @@ class GraphSetup:
         delete_nodes = {}
         tool_nodes = {}
 
+        def _wrap(node, agent_label: str, state_key: str):
+            return wrap_agent_node_with_validation(node, agent_label, state_key)
+
         if "market" in selected_analysts:
             analyst_nodes["market"] = create_market_analyst(
                 self.quick_thinking_llm
             )
             delete_nodes["market"] = create_msg_delete()
             tool_nodes["market"] = self.tool_nodes["market"]
+            analyst_nodes["market"] = _wrap(
+                analyst_nodes["market"], "Market Analyst", "market_report"
+            )
 
         if "social" in selected_analysts:
             analyst_nodes["social"] = create_social_media_analyst(
@@ -74,6 +81,9 @@ class GraphSetup:
             )
             delete_nodes["social"] = create_msg_delete()
             tool_nodes["social"] = self.tool_nodes["social"]
+            analyst_nodes["social"] = _wrap(
+                analyst_nodes["social"], "Social Media Analyst", "sentiment_report"
+            )
 
         if "news" in selected_analysts:
             analyst_nodes["news"] = create_news_analyst(
@@ -81,6 +91,9 @@ class GraphSetup:
             )
             delete_nodes["news"] = create_msg_delete()
             tool_nodes["news"] = self.tool_nodes["news"]
+            analyst_nodes["news"] = _wrap(
+                analyst_nodes["news"], "News Analyst", "news_report"
+            )
 
         if "fundamentals" in selected_analysts:
             analyst_nodes["fundamentals"] = create_fundamentals_analyst(
@@ -88,6 +101,11 @@ class GraphSetup:
             )
             delete_nodes["fundamentals"] = create_msg_delete()
             tool_nodes["fundamentals"] = self.tool_nodes["fundamentals"]
+            analyst_nodes["fundamentals"] = _wrap(
+                analyst_nodes["fundamentals"],
+                "Fundamentals Analyst",
+                "fundamentals_report",
+            )
 
         # New DeFi-specific analysts
         if "defi_market" in selected_analysts:
@@ -96,6 +114,11 @@ class GraphSetup:
             )
             delete_nodes["defi_market"] = create_msg_delete()
             tool_nodes["defi_market"] = self.tool_nodes.get("defi_market", self.tool_nodes.get("market"))
+            analyst_nodes["defi_market"] = _wrap(
+                analyst_nodes["defi_market"],
+                "DeFi Market Analyst",
+                "market_report",
+            )
 
         if "protocol" in selected_analysts:
             analyst_nodes["protocol"] = create_protocol_analyst(
@@ -103,6 +126,9 @@ class GraphSetup:
             )
             delete_nodes["protocol"] = create_msg_delete()
             tool_nodes["protocol"] = self.tool_nodes.get("protocol", self.tool_nodes.get("fundamentals"))
+            analyst_nodes["protocol"] = _wrap(
+                analyst_nodes["protocol"], "Protocol Analyst", "fundamentals_report"
+            )
 
         if "yield" in selected_analysts:
             analyst_nodes["yield"] = create_yield_analyst(
@@ -110,6 +136,9 @@ class GraphSetup:
             )
             delete_nodes["yield"] = create_msg_delete()
             tool_nodes["yield"] = self.tool_nodes.get("yield", self.tool_nodes.get("market"))
+            analyst_nodes["yield"] = _wrap(
+                analyst_nodes["yield"], "Yield Analyst", "yield_report"
+            )
 
         if "risk" in selected_analysts:
             analyst_nodes["risk"] = create_defi_risk_analyst(
@@ -117,25 +146,50 @@ class GraphSetup:
             )
             delete_nodes["risk"] = create_msg_delete()
             tool_nodes["risk"] = self.tool_nodes.get("risk", self.tool_nodes.get("market"))
+            analyst_nodes["risk"] = _wrap(
+                analyst_nodes["risk"], "DeFi Risk Analyst", "risk_report"
+            )
 
         # Create researcher and manager nodes
         bull_researcher_node = create_bull_researcher(
             self.quick_thinking_llm, self.bull_memory
         )
+        bull_researcher_node = _wrap(
+            bull_researcher_node, "Bull Researcher", "investment_debate_state"
+        )
         bear_researcher_node = create_bear_researcher(
             self.quick_thinking_llm, self.bear_memory
+        )
+        bear_researcher_node = _wrap(
+            bear_researcher_node, "Bear Researcher", "investment_debate_state"
         )
         research_manager_node = create_research_manager(
             self.deep_thinking_llm, self.invest_judge_memory
         )
+        research_manager_node = _wrap(
+            research_manager_node, "Research Manager", "investment_plan"
+        )
         trader_node = create_trader(self.quick_thinking_llm, self.trader_memory)
+        trader_node = _wrap(trader_node, "Trader", "trader_investment_plan")
 
         # Create risk analysis nodes
         risky_analyst = create_risky_debator(self.quick_thinking_llm)
+        risky_analyst = _wrap(
+            risky_analyst, "Risky Analyst", "risk_debate_state"
+        )
         neutral_analyst = create_neutral_debator(self.quick_thinking_llm)
+        neutral_analyst = _wrap(
+            neutral_analyst, "Neutral Analyst", "risk_debate_state"
+        )
         safe_analyst = create_safe_debator(self.quick_thinking_llm)
+        safe_analyst = _wrap(
+            safe_analyst, "Safe Analyst", "risk_debate_state"
+        )
         risk_manager_node = create_risk_manager(
             self.deep_thinking_llm, self.risk_manager_memory
+        )
+        risk_manager_node = _wrap(
+            risk_manager_node, "Risk Judge", "final_trade_decision"
         )
 
         # Create workflow

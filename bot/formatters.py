@@ -8,6 +8,25 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 
 
+def format_whitelist_warning(protocol_name: str, reason: str, status: str) -> str:
+    """格式化协议白名单警告"""
+    safe_name = protocol_name or "未知协议"
+    reason_text = reason or "未提供具体原因"
+
+    if status == "suspicious":
+        return (
+            f"⚠️ 检测到可疑协议：{safe_name}\n"
+            f"原因：{reason_text}\n\n"
+            "出于安全考虑，已拒绝继续分析。如需继续，请确认该协议来源可信。"
+        )
+
+    return (
+        f"ℹ️ 协议未在白名单中：{safe_name}\n"
+        f"提示：该协议未经验证，请谨慎操作。\n"
+        f"原因：{reason_text}"
+    )
+
+
 def add_cache_marker(message: str, cached_at: float) -> str:
     """Append a cache marker with human-readable timestamp to a message."""
     cached_time = datetime.fromtimestamp(cached_at).strftime("%H:%M")
