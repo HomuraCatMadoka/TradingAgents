@@ -1,0 +1,33 @@
+.card {
+  margin-bottom: 12px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.name {
+  font-weight: 600;
+  color: var(--tg-text-color);
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.metricLabel {
+  font-size: 12px;
+  color: var(--tg-muted-text);
+}
+
+.metricValue {
+  font-size: 14px;
+  color: var(--tg-text-color);
+  font-weight: 600;
+}

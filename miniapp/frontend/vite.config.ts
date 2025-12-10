@@ -8,8 +8,19 @@ export default defineConfig({
   base: './', // ensure assets resolve in Telegram WebView
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, 'src'),
+      '@': path.resolve(__dirname, './src'),
+      '@/components': path.resolve(__dirname, './src/components'),
+      '@/pages': path.resolve(__dirname, './src/pages'),
+      '@/services': path.resolve(__dirname, './src/services'),
+      '@/hooks': path.resolve(__dirname, './src/hooks'),
+      '@/store': path.resolve(__dirname, './src/store'),
+      '@/types': path.resolve(__dirname, './src/types'),
+      '@/utils': path.resolve(__dirname, './src/utils'),
     },
+  },
+  test: {
+    environment: 'jsdom',
+    setupFiles: './src/setupTests.ts',
   },
   server: {
     host: true, // allow external access (ngrok)
