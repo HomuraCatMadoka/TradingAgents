@@ -44,6 +44,7 @@ from defiagents.agents.utils.defi_protocol_tools import (
     get_chain_tvl_overview,
     compare_protocols,
     search_protocols_by_category,
+    get_compound_markets,
 )
 from defiagents.agents.utils.defi_pool_tools import (
     get_uniswap_top_pools,
@@ -202,6 +203,7 @@ class TradingAgentsGraph:
                     get_all_defi_protocols,
                     get_chain_tvl_overview,
                     compare_protocols,
+                    get_compound_markets,
                     search_protocols_by_category,
                     # Market data
                     get_crypto_price,
@@ -218,6 +220,7 @@ class TradingAgentsGraph:
                     get_protocol_overview,
                     get_protocol_tvl,
                     compare_protocols,
+                    get_compound_markets,
                     # Token/market data
                     get_crypto_market_data,
                     get_token_by_contract,

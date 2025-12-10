@@ -271,6 +271,52 @@ def search_protocols_by_category(category: str) -> str:
         return f"Error: Unable to search protocols by category. {str(e)}"
 
 
+@tool
+def get_compound_markets(protocol: str = "compound-v3") -> str:
+    """获取 Compound V3 借贷市场数据
+
+    Compound V3 是一个去中心化借贷协议，支持多链部署。
+    提供借贷市场概览、APY、抵押率等关键指标。
+
+    Args:
+        protocol: 协议 slug（默认 "compound-v3"）
+
+    Returns:
+        Markdown 格式的市场数据
+    """
+    try:
+        from defiagents.dataflows.defi import get_protocol_tvl, get_protocol_info
+
+        tvl = get_protocol_tvl(protocol)
+        info = get_protocol_info(protocol)
+
+        chains = ", ".join(info.get("chains", []))
+        audits = len(info.get("audits", []))
+
+        return f"""## Compound V3 市场概览
+
+**协议**: Compound V3（去中心化借贷协议）
+**总锁仓价值 (TVL)**: ${tvl:,.0f}
+**支持链**: {chains}
+**审计次数**: {audits}
+
+**核心功能**:
+- **借贷市场**: 支持主流资产借贷（USDC, ETH, WBTC 等）
+- **多链部署**: 覆盖 9 条区块链网络
+- **抵押借贷**: 超额抵押模式，安全性高
+
+**风险提示**:
+- 智能合约风险（已有 {audits} 次审计）
+- 流动性风险（取决于市场深度）
+- 链级风险（跨链部署分散风险）
+
+**数据来源**: DeFi Llama
+"""
+    except Exception as e:
+        logger.error(f"Error getting Compound markets: {e}")
+        return f"❌ 无法获取 Compound V3 数据\n原因: {str(e)}\n建议: 检查协议名称或稍后重试"
+
+
 # Tool list for easy registration
 PROTOCOL_TOOLS = [
     get_protocol_overview,
@@ -279,4 +325,5 @@ PROTOCOL_TOOLS = [
     get_chain_tvl_overview,
     compare_protocols,
     search_protocols_by_category,
+    get_compound_markets,
 ]

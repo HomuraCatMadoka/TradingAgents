@@ -179,7 +179,17 @@ COMPOUND_V3 = ProtocolConfig(
     name="Compound V3",
     slug="compound-v3",
     category="Lending",
-    chains=["ethereum", "arbitrum", "polygon", "base"],
+    chains=[
+        "ethereum",
+        "polygon",
+        "base",
+        "arbitrum",
+        "optimism",
+        "scroll",
+        "mantle",
+        "ronin",
+        "unichain",
+    ],
     tvl_tier="Blue-chip",
     risk_level="Blue-chip",
     defillama_slug="compound-v3",
@@ -189,7 +199,7 @@ COMPOUND_V3 = ProtocolConfig(
         "ethereum": "compound-finance/compound-v3-ethereum-usdc",
     },
     contracts={},
-    notes="Comet架构：每个市场只有一个Base Asset可借。抵押品不产生利息"
+    notes="Comet架构：每个市场只有一个Base Asset可借，支持多链部署（9链）。抵押品不产生利息"
 )
 
 RADIANT = ProtocolConfig(
