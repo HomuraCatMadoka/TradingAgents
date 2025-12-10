@@ -73,6 +73,28 @@ class InputSanitizer:
         Returns:
             SanitizationResult对象
         """
+        # 0. 长度检查，防止超长输入导致成本放大或被滥用
+        MAX_INPUT_LENGTH = 500
+        if len(user_input) > MAX_INPUT_LENGTH:
+            logger.warning(
+                "Rejected input exceeding max length: %d chars", len(user_input)
+            )
+            return SanitizationResult(
+                is_safe=False,
+                risk_score=0.3,
+                rejection_reason=(
+                    f"输入过长（{len(user_input)} 字符），超过限制（{MAX_INPUT_LENGTH} 字符）。\n"
+                    "请简化您的问题，例如：\n"
+                    "✅ '分析 aave-v3'\n"
+                    "✅ '用 10 万投资 compound，低风险'\n"
+                    "❌ '请分析...(超长描述)...'"
+                ),
+                intent=None,
+                confidence=0.0,
+                raw_input=user_input,
+                sanitized_input=user_input,
+            )
+
         # 1. 基础净化（移除恶意字符）
         sanitized_input = self.injection_detector.sanitize_basic(user_input)
 

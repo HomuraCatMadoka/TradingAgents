@@ -110,6 +110,13 @@ DEFAULT_CONFIG = {
         "cache_ttl": 300,  # Cache TTL in seconds (5 minutes)
     },
 
+    # ========== Security Configuration ==========
+    "security": {
+        "enable_sanitization": True,
+        "strict_mode": False,
+        "max_input_length": 500,
+    },
+
     # ========== Telegram Bot Configuration ==========
     "telegram": {
         "bot_token": os.getenv("TELEGRAM_BOT_TOKEN", ""),
