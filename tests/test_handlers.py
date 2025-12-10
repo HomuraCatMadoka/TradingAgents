@@ -654,6 +654,42 @@ async def test_backtest_command(monkeypatch, handler_factory):
 
 
 @pytest.mark.anyio
+async def test_audit_stats_command(handler_factory):
+    handler, _, _, _ = handler_factory(admin_ids="1", per_user="2")
+    class StubAuditLogger:
+        def __init__(self):
+            self.calls = 0
+
+        def get_statistics(self, days=7):
+            self.calls += 1
+            return {
+                "period_days": days,
+                "total_requests": 1,
+                "active_users": 1,
+                "security_rejections": 0,
+                "avg_response_time": 1.0,
+                "cache_hit_rate": 50.0,
+                "top_protocols": [("aave", 1)],
+            }
+
+    handler.audit_logger = StubAuditLogger()
+
+    admin_update = FakeUpdate(user_id=1)
+    await handler.audit_stats_command(admin_update, FakeContext())
+    assert handler.audit_logger.calls == 1
+    assert any("总请求数" in reply for reply in admin_update.message.replies)
+
+    non_admin = FakeUpdate(user_id=2)
+    await handler.audit_stats_command(non_admin, FakeContext())
+    assert any("仅管理员" in reply for reply in non_admin.message.replies)
+
+    handler.audit_logger = None
+    disabled_update = FakeUpdate(user_id=1)
+    await handler.audit_stats_command(disabled_update, FakeContext())
+    assert any("未启用" in reply for reply in disabled_update.message.replies)
+
+
+@pytest.mark.anyio
 async def test_output_validation_patches_final_decision(handler_factory):
     handler, _, _, _ = handler_factory(per_user="5")
     handler.config.cache_enabled = False

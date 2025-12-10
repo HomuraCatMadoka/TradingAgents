@@ -13,6 +13,7 @@ load_dotenv()
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 DEFAULT_CACHE_ENABLED = True
 DEFAULT_CACHE_TTL_SECONDS = 1800
+DEFAULT_AUDIT_DB_PATH = "./data/audit.db"
 
 
 def _parse_admin_user_ids(env_value: str) -> Set[int]:
@@ -95,6 +96,8 @@ class BotConfig:
         self.enable_input_sanitization = os.getenv("BOT_ENABLE_SANITIZATION", "true").lower() == "true"
         self.rate_limit_per_user = int(os.getenv("BOT_RATE_LIMIT_PER_USER", "10"))  # 每小时
         self.rate_limit_window = int(os.getenv("BOT_RATE_LIMIT_WINDOW", "3600"))  # 秒
+        self.audit_enabled = _parse_bool(os.getenv("BOT_AUDIT_ENABLED"), True)
+        self.audit_db_path = os.getenv("BOT_AUDIT_DB_PATH", DEFAULT_AUDIT_DB_PATH)
 
         # 缓存配置
         redis_url_env = os.getenv("REDIS_URL")

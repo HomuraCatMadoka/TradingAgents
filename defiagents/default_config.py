@@ -117,6 +117,12 @@ DEFAULT_CONFIG = {
         "max_input_length": 500,
     },
 
+    "audit": {
+        "enabled": True,
+        "db_path": "./data/audit.db",
+        "retention_days": 90,
+    },
+
     # ========== Telegram Bot Configuration ==========
     "telegram": {
         "bot_token": os.getenv("TELEGRAM_BOT_TOKEN", ""),

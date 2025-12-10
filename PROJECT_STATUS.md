@@ -8,7 +8,7 @@
 
 **最后更新**: 2025-12-10
 **当前阶段**: Phase 3.3 安全增强完成
-**本次更新**: S1-S5 核心安全层（输出验证+白名单+Redis速率+Key轮询+长度限制）+ Compound V3 支持 + TVL修复
+**本次更新**: S6 审计日志系统（SQLite 审计表 + Bot 集成 + `/audit_stats` 管理命令）
 
 ---
 
@@ -497,8 +497,21 @@ GOOGLE_API_KEYS=key1,key2,key3,key4
 
 ---
 
-#### S6. 审计日志系统
-**方案**: 记录所有分析请求、Agent 决策、拒绝原因到数据库
+#### S6. 审计日志系统 ✅ **已完成**
+**完成日期**: 2025-12-10
+**实际耗时**: 约 2 小时
+
+**已实现功能**:
+- ✅ SQLite 审计表自动创建与索引（./data/audit.db，支持内存模式）
+- ✅ AuditLogger 记录分析请求、安全拒绝、错误并支持结果更新/统计
+- ✅ Bot 集成审计流水 + `/audit_stats` 管理员统计输出
+- ✅ 单测覆盖核心路径：写入/更新/统计（tests/test_audit_logger.py）
+
+**关键文件**:
+- `defiagents/audit/logger.py`，`defiagents/audit/models.py`
+- `bot/handlers.py`，`bot/telegram_bot.py`
+- `bot/config.py`，`defiagents/default_config.py`
+- `tests/test_audit_logger.py`
 
 ---
 

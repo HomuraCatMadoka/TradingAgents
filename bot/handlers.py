@@ -16,6 +16,7 @@ from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from defiagents.audit.logger import AuditLogger
 from defiagents.dataflows.defi import health_checker
 from defiagents.security.output_validator import OutputValidator, ValidationContext
 from defiagents.security.protocol_whitelist import ProtocolWhitelist, WhitelistResult
@@ -77,6 +78,13 @@ class CommandHandlers:
         # 加载DeFi Agent（延迟加载）
         self._agent = None
         self._sanitizer = None
+        self.audit_logger: Optional[AuditLogger] = None
+        if getattr(self.config, "audit_enabled", False):
+            try:
+                self.audit_logger = AuditLogger(db_path=self.config.audit_db_path)
+            except Exception as exc:  # pragma: no cover - 守护路径
+                logger.warning("Audit logger initialization failed: %s", exc)
+                self.audit_logger = None
 
     @property  # pragma: no cover - integration path
     def agent(self):
@@ -317,9 +325,16 @@ class CommandHandlers:
                 )
 
         # 调用分析
+        audit_metadata = {
+            "protocol_name": whitelist_result["protocol_slug"] if whitelist_result else protocol_name,
+            "whitelist_status": whitelist_result.get("status") if whitelist_result else None,
+            "input_safe": True,
+            "input_risk_score": 0.0,
+        }
         analysis_kwargs = self._prepare_analysis_kwargs(
             protocol_name=whitelist_result["protocol_slug"] if whitelist_result else protocol_name,
             whitelist_result=whitelist_result,
+            audit_metadata=audit_metadata,
         )
         await self._perform_analysis(update, protocol_name, **analysis_kwargs)
 
@@ -439,7 +454,13 @@ class CommandHandlers:
             query += f"，投资金额{investment_amount}美金"
         query += f"，风险偏好{risk_preference}"
 
-        await self._perform_analysis(update, query)
+        audit_metadata = {
+            "investment_amount": investment_amount,
+            "input_safe": True,
+            "input_risk_score": 0.0,
+        }
+        analysis_kwargs = self._prepare_analysis_kwargs(audit_metadata=audit_metadata)
+        await self._perform_analysis(update, query, **analysis_kwargs)
 
     async def compare_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
@@ -470,7 +491,13 @@ class CommandHandlers:
         protocol2 = context.args[1]
 
         query = f"对比{protocol1}和{protocol2}"
-        await self._perform_analysis(update, query)
+        analysis_kwargs = self._prepare_analysis_kwargs(
+            audit_metadata={
+                "input_safe": True,
+                "input_risk_score": 0.0,
+            }
+        )
+        await self._perform_analysis(update, query, **analysis_kwargs)
 
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """处理/status命令（速率限制豁免）。"""
@@ -534,6 +561,43 @@ class CommandHandlers:
 
         await update.message.reply_text(f"✅ 已清除 {int(cleared)} 个缓存条目")
 
+    async def audit_stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """显示审计统计（仅管理员）"""
+        user_id = update.effective_user.id if update and update.effective_user else None
+        if user_id is None:
+            return
+        if not self.config.is_admin(user_id):
+            await update.message.reply_text("⚠️ 仅管理员可访问审计统计")
+            return
+        if not self.audit_logger or not getattr(self.config, "audit_enabled", False):
+            await update.message.reply_text("⚠️ 审计日志未启用")
+            return
+
+        try:
+            stats = self.audit_logger.get_statistics(days=7)
+        except Exception as exc:  # pragma: no cover - 守护统计
+            logger.error("Failed to load audit stats: %s", exc)
+            await update.message.reply_text("⚠️ 无法获取审计统计")
+            return
+
+        message = f"""📊 **审计统计（最近 {stats.get('period_days', 7)} 天）**
+
+**总体数据**:
+• 总请求数: {stats.get('total_requests', 0)}
+• 活跃用户: {stats.get('active_users', 0)}
+• 安全拒绝: {stats.get('security_rejections', 0)}
+
+**性能指标**:
+• 平均响应时间: {stats.get('avg_response_time', 0.0):.1f}秒
+• 缓存命中率: {stats.get('cache_hit_rate', 0.0):.1f}%
+
+**热门协议**:
+"""
+        for i, (protocol, count) in enumerate(stats.get("top_protocols", []), 1):
+            message += f"{i}. {protocol}: {count}次\\n"
+
+        await update.message.reply_text(message, parse_mode="Markdown")
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
         处理普通文本消息（自然语言输入）
@@ -543,6 +607,7 @@ class CommandHandlers:
         protocol_for_check: Optional[str] = None
         investment_amount: Optional[float] = None
         whitelist_result: Optional[WhitelistResult] = None
+        risk_score: float = 0.0
 
         # 速率限制检查
         is_allowed, rejection_reason = self.check_rate_limit(user_id)
@@ -555,9 +620,21 @@ class CommandHandlers:
         # 输入净化
         if self.config.enable_input_sanitization:
             sanitization_result = self.sanitizer.sanitize(user_input)
+            risk_score = getattr(sanitization_result, "risk_score", 0.0) or 0.0
 
             if not sanitization_result.is_safe:
                 logger.warning(f"User {user_id} input rejected: {sanitization_result.rejection_reason}")
+                if self.audit_logger:
+                    try:
+                        self.audit_logger.log_security_rejection(
+                            user_id=user_id,
+                            query=user_input,
+                            rejection_reason=sanitization_result.rejection_reason or "blocked",
+                            risk_score=risk_score,
+                            username=update.effective_user.username if update and update.effective_user else None,
+                        )
+                    except Exception:  # pragma: no cover - 守护审计
+                        logger.warning("Audit security log failed for user %s", user_id)
                 await update.message.reply_text(
                     self.formatter.format_security_rejection(
                         sanitization_result.rejection_reason
@@ -641,10 +718,18 @@ class CommandHandlers:
                 )
 
         # 执行分析
+        audit_metadata = {
+            "protocol_name": whitelist_result["protocol_slug"] if whitelist_result else protocol_for_check,
+            "investment_amount": investment_amount,
+            "whitelist_status": whitelist_result.get("status") if whitelist_result else None,
+            "input_safe": True,
+            "input_risk_score": risk_score,
+        }
         analysis_kwargs = self._prepare_analysis_kwargs(
             protocol_name=whitelist_result["protocol_slug"] if whitelist_result else protocol_for_check,
             investment_amount=investment_amount,
             whitelist_result=whitelist_result,
+            audit_metadata=audit_metadata,
         )
         await self._perform_analysis(update, user_input, **analysis_kwargs)
 
@@ -682,6 +767,7 @@ class CommandHandlers:
         protocol_name: Optional[str] = None,
         investment_amount: Optional[float] = None,
         whitelist_result: Optional[WhitelistResult] = None,
+        audit_metadata: Optional[Dict[str, Any]] = None,
     ):
         """
         执行DeFi分析
@@ -690,11 +776,52 @@ class CommandHandlers:
             update: Telegram更新对象
             query: 分析查询
         """
+        audit_log_id: Optional[int] = None
+        audit_payload = audit_metadata or {}
+        audit_user_id = update.effective_user.id if update and update.effective_user else None
+        audit_username = update.effective_user.username if update and update.effective_user else None
         start_time = time.time()
         trade_date = datetime.now().strftime("%Y-%m-%d")
         cache_key: Optional[str] = None
         cached_result: Optional[Dict[str, Any]] = None
         cache_allowed = bool(self.config.cache_enabled and self.cache_client)
+
+        def _resolve_llm_model() -> Optional[str]:
+            agent_obj = getattr(self, "_agent", None)
+            llm = getattr(agent_obj, "quick_thinking_llm", None) if agent_obj else None
+            return getattr(llm, "model", getattr(llm, "model_name", None)) if llm else None
+
+        def _update_audit(result_payload: Optional[Dict[str, Any]], cache_hit: bool) -> None:
+            if not (self.audit_logger and audit_log_id and isinstance(result_payload, dict)):
+                return
+            try:
+                self.audit_logger.update_analysis_result(
+                    log_id=audit_log_id,
+                    final_decision=result_payload.get("final_decision", "UNKNOWN"),
+                    confidence_score=float(result_payload.get("confidence_score") or 0.0),
+                    validation_issues=result_payload.get("validation_issues", []),
+                    response_time=time.time() - start_time,
+                    llm_model=_resolve_llm_model() or self.config.agent_config_type,
+                    cache_hit=cache_hit,
+                )
+            except Exception as exc:  # pragma: no cover - 守护审计
+                logger.warning("Audit update failed: %s", exc)
+
+        if self.audit_logger and audit_user_id is not None:
+            try:
+                audit_log_id = self.audit_logger.log_analysis_request(
+                    user_id=audit_user_id,
+                    query=query,
+                    protocol_name=audit_payload.get("protocol_name") or protocol_name,
+                    investment_amount=audit_payload.get("investment_amount", investment_amount),
+                    whitelist_status=audit_payload.get("whitelist_status")
+                    or (whitelist_result.get("status") if whitelist_result else None),
+                    input_safe=audit_payload.get("input_safe", True),
+                    input_risk_score=float(audit_payload.get("input_risk_score", 0.0) or 0.0),
+                    username=audit_username,
+                )
+            except Exception as exc:  # pragma: no cover - 守护审计
+                logger.warning("Audit log failed: %s", exc)
 
         try:
             # 1. 发送初始进度消息
@@ -729,6 +856,7 @@ class CommandHandlers:
 
                 messages = self.formatter.format_analysis_result(cached_result)
                 messages = self._append_cache_marker(messages, cached_result)
+                _update_audit(cached_result, cache_hit=True)
                 for message in messages:
                     await update.message.reply_text(message, parse_mode="Markdown")
                     await asyncio.sleep(0.5)
@@ -774,6 +902,7 @@ class CommandHandlers:
             duration = time.time() - start_time
 
             logger.info(f"Analysis completed in {duration:.2f}s for query: {query[:50]}")
+            _update_audit(result, cache_hit=False)
 
             # 缓存写入
             if cache_allowed and cache_key and result:
@@ -811,6 +940,16 @@ class CommandHandlers:
 
         except asyncio.TimeoutError:
             logger.error(f"Analysis timeout for query: {query}")
+            if self.audit_logger and audit_user_id is not None:
+                try:
+                    self.audit_logger.log_error(
+                        user_id=audit_user_id,
+                        query=query,
+                        error_message=f"timeout>{self.config.analysis_timeout}",
+                        username=audit_username,
+                    )
+                except Exception:  # pragma: no cover - 守护审计
+                    logger.warning("Audit error log failed on timeout")
             await update.message.reply_text(
                 self.formatter.format_error(
                     f"分析超时（>{self.config.analysis_timeout}秒），请稍后重试或选择其他协议。"
@@ -819,6 +958,16 @@ class CommandHandlers:
 
         except Exception as e:
             logger.error(f"Analysis failed: {e}", exc_info=True)
+            if self.audit_logger and audit_user_id is not None:
+                try:
+                    self.audit_logger.log_error(
+                        user_id=audit_user_id,
+                        query=query,
+                        error_message=str(e),
+                        username=audit_username,
+                    )
+                except Exception:  # pragma: no cover - 守护审计
+                    logger.warning("Audit error log failed: %s", e)
             await update.message.reply_text(
                 self.formatter.format_error(
                     f"分析出错：{str(e)[:100]}\n\n请稍后重试。"

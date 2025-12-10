@@ -664,3 +664,8 @@ PYTHONPATH=$PWD:$PYTHONPATH python3 examples/test_defi_with_gemini.py
 - 新增 `bot/rate_limiter.py`：Redis Sorted Set 持久化计数，异常时降级内存。
 - `bot/handlers.py` 接入 `RedisRateLimiter`，复用缓存连接并保持管理员豁免与全局统计。
 - 新增测试 `tests/test_rate_limiter.py`，并与 `tests/test_rate_limit.py` 联跑通过（python3 -m pytest tests/test_rate_limiter.py tests/test_rate_limit.py -q）。
+
+## 2025-12-10 审计日志系统（S6）
+- 新增 `defiagents/audit/`（AuditLogger + AuditLog 数据模型），SQLite 自动建表/索引，支持 `:memory:` 共享缓存模式。
+- Bot 集成审计流水：分析请求、安全拒绝、错误记录与结果更新，新增 `/audit_stats` 管理命令（管理员可见）。
+- 配置补充（`defiagents/default_config.py`, `bot/config.py`）并新增测试 `tests/test_audit_logger.py` 覆盖写入/更新/统计。
