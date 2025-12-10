@@ -7,7 +7,7 @@
 > - 完整文档索引见 [docs/README.md](docs/README.md)
 
 **最后更新**: 2025-12-10
-**当前阶段**: Phase 2 完成，Phase 3 待启动
+**当前阶段**: Phase 3 进行中（性能优化与功能增强）
 
 ---
 
@@ -29,6 +29,15 @@
 - [x] 速率限制和进度反馈
 - [x] 消息格式化和错误处理
 - [x] Bot 部署文档和测试指南
+
+#### Phase 3: 性能优化与功能增强
+- [x] `/status` 命令（已完成于 2025-12-10）
+  - 数据源健康检查（DeFi Llama, The Graph, CoinGecko, Gemini）
+  - 5 分钟 TTL 缓存，响应时间 <100ms
+  - 管理员权限系统（BOT_ADMIN_USER_IDS）
+  - 全局统计收集（总请求数、活跃用户、平均响应时间）
+  - 双视图格式化（普通用户 vs 管理员）
+  - 测试覆盖率 98%
 
 ### 🔄 性能指标（截至 2025-12-10）
 
@@ -114,30 +123,25 @@ async def _perform_analysis(self, update: Update, query: str):
 
 ---
 
-#### 3. `/status` 命令 ⏱️ 2-3小时
-**功能**: 显示系统健康状态和统计信息
+#### 3. `/status` 命令 ✅ **已完成**
+**完成日期**: 2025-12-10
+**实际耗时**: 约 3 小时（包含 4 个并行任务）
 
-**实现示例**:
-```
-📊 系统状态
+**已实现功能**:
+- ✅ 数据源健康检查（DeFi Llama, The Graph, CoinGecko, Gemini）
+- ✅ 5 分钟 TTL 缓存（首次 3-5 秒，后续 <100ms）
+- ✅ 管理员权限系统（读取 BOT_ADMIN_USER_IDS 环境变量）
+- ✅ 全局统计收集（总请求数、活跃用户、平均响应时间）
+- ✅ 双视图格式化（普通用户 vs 管理员）
+- ✅ 测试覆盖率 98%（30 个测试全部通过）
 
-**数据源健康度**
-✅ DeFi Llama API: 正常
-⚠️ The Graph API: 部分可用 (Uniswap ✅, Aave ⚠️)
-✅ CoinGecko API: 正常
-✅ Gemini LLM: 正常
+**关键文件**:
+- `defiagents/dataflows/defi/health_checker.py` (新建)
+- `bot/handlers.py` (扩展速率限制与统计)
+- `bot/formatters.py` (新增格式化函数)
+- `bot/config.py` (管理员权限)
 
-**使用统计**
-📈 今日分析次数: 15
-⏱️ 平均响应时间: 105秒
-💰 今日成本: $0.00 (免费额度)
-
-**您的使用情况**
-📊 今日请求: 3/10
-⏰ 速率限制重置: 45分钟后
-```
-
-**实现位置**: `bot/handlers.py` - 添加 `status_command()` 方法
+**参见**: [提交 9a17be1](../../commit/9a17be1)
 
 ---
 
