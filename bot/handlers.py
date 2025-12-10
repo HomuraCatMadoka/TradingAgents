@@ -8,6 +8,7 @@ import asyncio
 import time
 import hashlib
 import json
+import inspect
 from functools import partial
 from threading import Lock
 from typing import Any, Dict, List, Optional
@@ -22,6 +23,7 @@ from defiagents.security.protocol_whitelist import ProtocolWhitelist, WhitelistR
 from .cache import CacheClient
 from .config import get_bot_config, is_admin
 from .formatters import TelegramFormatter, add_cache_marker, format_whitelist_warning
+from .rate_limiter import RedisRateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +36,7 @@ class CommandHandlers:
         self.config = get_bot_config()
         self.formatter = TelegramFormatter(max_length=self.config.max_message_length)
 
-        # 速率限制追踪
-        self.rate_limit_tracker: Dict[int, list] = {}  # {user_id: [timestamps]}
+        # 速率限制统计
         self.global_stats = {
             "total_requests": 0,
             "active_users": set(),
@@ -61,6 +62,17 @@ class CommandHandlers:
             except Exception as exc:  # pragma: no cover - defensive downgrade
                 logger.warning("Cache client initialization failed, disabling cache: %s", exc)
                 self.cache_client = None
+
+        redis_client = None
+        if self.cache_client and hasattr(self.cache_client, "_client"):
+            redis_client = self.cache_client._client
+
+        self.rate_limiter = RedisRateLimiter(
+            redis_client=redis_client,
+            window_seconds=self.config.rate_limit_window,
+            max_requests=self.config.rate_limit_per_user,
+            time_func=time.time,
+        )
 
         # 加载DeFi Agent（延迟加载）
         self._agent = None
@@ -156,63 +168,59 @@ class CommandHandlers:
         now = time.time()
         with self._lock:
             self._reset_stats_window_if_needed(now)
-
-            # 管理员豁免
             if is_admin(user_id):
                 self._register_request(user_id)
                 return True, None
 
-            window_start = now - self.config.rate_limit_window
-
-            # 清理过期记录
-            timestamps = self.rate_limit_tracker.get(user_id, [])
-            timestamps = [ts for ts in timestamps if ts > window_start]
-            self.rate_limit_tracker[user_id] = timestamps
-
-            # 检查限制
-            request_count = len(self.rate_limit_tracker[user_id])
-            if request_count >= self.config.rate_limit_per_user:
-                wait_reference = (
-                    self.rate_limit_tracker[user_id][0]
-                    if self.rate_limit_tracker[user_id]
-                    else now
-                )
-                wait_time = int(wait_reference + self.config.rate_limit_window - now)
-                return False, f"请求过于频繁，请等待{wait_time}秒后再试"
-
-            # 记录本次请求
-            self.rate_limit_tracker[user_id].append(now)
-            self._register_request(user_id)
-            return True, None
+        is_allowed, rejection_reason = self.rate_limiter.check_and_record(user_id)
+        if is_allowed:
+            with self._lock:
+                self._register_request(user_id)
+        return is_allowed, rejection_reason
 
     def _get_rate_limit_status(self, user_id: Optional[int]) -> Dict[str, Any]:
         """Build rate limit status without counting this request."""
+        limit = self.config.rate_limit_per_user
+        with self._lock:
+            self._reset_stats_window_if_needed(time.time())
+
         if user_id is None:
             return {
                 "used": 0,
-                "limit": self.config.rate_limit_per_user,
+                "limit": limit,
                 "reset_in_seconds": 0,
             }
-
-        now = time.time()
-        with self._lock:
-            self._reset_stats_window_if_needed(now)
-            window_start = now - self.config.rate_limit_window
-            timestamps = [ts for ts in self.rate_limit_tracker.get(user_id, []) if ts > window_start]
-            self.rate_limit_tracker[user_id] = timestamps
-
-            used = len(timestamps)
-            reset_in_seconds = (
-                max(0.0, min(timestamps) + self.config.rate_limit_window - now)
-                if timestamps
-                else 0.0
-            )
-            limit = self.config.rate_limit_per_user
 
         if is_admin(user_id):
             return {"used": 0, "limit": limit, "reset_in_seconds": 0}
 
-        return {"used": used, "limit": limit, "reset_in_seconds": reset_in_seconds}
+        status = self.rate_limiter.get_user_quota_status(user_id)
+        limit = status.get("limit", self.config.rate_limit_per_user)
+        return {
+            "used": status.get("used", 0),
+            "limit": limit,
+            "reset_in_seconds": status.get("reset_in_seconds", 0),
+        }
+
+    def _prepare_analysis_kwargs(self, **kwargs: Any) -> Dict[str, Any]:
+        """根据 _perform_analysis 签名过滤可接受的关键字参数。"""
+        target = self._perform_analysis
+        try:
+            signature = inspect.signature(target)
+        except (TypeError, ValueError):
+            return {}
+
+        accepts_kwargs = any(param.kind == inspect.Parameter.VAR_KEYWORD for param in signature.parameters.values())
+        if accepts_kwargs:
+            return kwargs
+
+        allowed_keys = {
+            name
+            for name, param in signature.parameters.items()
+            if name not in {"self", "update", "query"}
+            and param.kind in (inspect.Parameter.KEYWORD_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+        }
+        return {k: v for k, v in kwargs.items() if k in allowed_keys}
 
     def _format_health_status(self, health_status: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
         """Normalize raw health checker output for the formatter."""
@@ -309,12 +317,11 @@ class CommandHandlers:
                 )
 
         # 调用分析
-        await self._perform_analysis(
-            update,
-            protocol_name,
+        analysis_kwargs = self._prepare_analysis_kwargs(
             protocol_name=whitelist_result["protocol_slug"] if whitelist_result else protocol_name,
             whitelist_result=whitelist_result,
         )
+        await self._perform_analysis(update, protocol_name, **analysis_kwargs)
 
     async def backtest_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """处理/backtest命令"""
@@ -634,13 +641,12 @@ class CommandHandlers:
                 )
 
         # 执行分析
-        await self._perform_analysis(
-            update,
-            user_input,
+        analysis_kwargs = self._prepare_analysis_kwargs(
             protocol_name=whitelist_result["protocol_slug"] if whitelist_result else protocol_for_check,
             investment_amount=investment_amount,
             whitelist_result=whitelist_result,
         )
+        await self._perform_analysis(update, user_input, **analysis_kwargs)
 
     def _generate_query_hash(self, **params: Any) -> str:
         """Generate a stable 8-char MD5 hash from sorted query params."""

@@ -654,3 +654,13 @@ PYTHONPATH=$PWD:$PYTHONPATH python3 examples/test_defi_with_gemini.py
 - 新增工具 `get_compound_markets`，输出 Compound V3 跨链市场概览（TVL/审计/核心功能/风险提示），注册到 DeFi 市场与基础分析工具节点。
 - 更新 `protocol_registry.py` 中 Compound V3 链列表（涵盖 Ethereum/Polygon/Base/Arbitrum/Optimism/Scroll/Mantle/Ronin/Unichain）并补充多链备注。
 - 新增测试 `tests/test_compound_v3.py`，覆盖 TVL 获取、协议信息、工具调用 Markdown 输出。
+
+## 2025-12-10 Miniapp 协议数据 API（Phase 1）
+- 新增 miniapp backend 协议数据路由（列表/详情/历史/市场/Uniswap 池/分析触发），直接同步调用 DeFi Llama/The Graph/CoinGecko。
+- 新的 `services/defi_data.py` 同步缓存（lru_cache）和多源回退逻辑，统一 `_normalize_tvl`、时间戳格式，友好错误封装。
+- 更新 AgentService 同步执行 TradingAgentsGraph 结果并落库，`routers/protocols.py` 路由与 `tests/test_protocols.py` 覆盖率 99%（目标文件）。
+
+## 2025-12-12 Redis 持久化速率限制
+- 新增 `bot/rate_limiter.py`：Redis Sorted Set 持久化计数，异常时降级内存。
+- `bot/handlers.py` 接入 `RedisRateLimiter`，复用缓存连接并保持管理员豁免与全局统计。
+- 新增测试 `tests/test_rate_limiter.py`，并与 `tests/test_rate_limit.py` 联跑通过（python3 -m pytest tests/test_rate_limiter.py tests/test_rate_limit.py -q）。
