@@ -26,11 +26,21 @@ pip install -e .
 复制 `.env.example` 到 `.env` 并填入 API 密钥：
 ```bash
 cp .env.example .env
-# 编辑 .env 文件，添加：
-# - GOOGLE_API_KEY（必需，Gemini API）
-# - THE_GRAPH_API_KEY（必需，链上数据）
-# - TELEGRAM_BOT_TOKEN（运行 Bot 时必需）
+# 编辑 .env 文件
 ```
+
+**必需变量**：
+- `GOOGLE_API_KEY` - Google Gemini LLM（免费，60 requests/分钟）
+- `THE_GRAPH_API_KEY` - The Graph 链上数据（免费 100K queries/月）
+- `TELEGRAM_BOT_TOKEN` - Telegram Bot Token（从 @BotFather 获取）
+
+**可选变量**：
+- `OPENAI_API_KEY` - 如果使用 OpenAI 替代 Gemini
+- `BOT_RATE_LIMIT_PER_USER` - Bot 速率限制（默认 10次/小时）
+- `BOT_ADMIN_USER_IDS` - 管理员用户 ID（逗号分隔，无速率限制）
+- `ETHEREUM_RPC_URL` 等 - 自定义 RPC 节点（可选，有免费公共节点）
+
+完整变量列表参见 `.env.example`。
 
 ### 运行测试
 ```bash
@@ -48,6 +58,20 @@ cd defiagents/security
 python injection_detector.py  # 8个注入攻击测试案例
 python intent_extractor.py    # 10个意图提取测试案例
 python input_sanitizer.py     # 综合测试
+```
+
+**运行单个测试**：
+```bash
+# 仅测试 DeFi Llama 数据源
+python -m pytest tests/test_defi_datasources_only.py::test_defillama_tvl -v
+
+# 仅测试安全模块的注入检测
+python -m pytest defiagents/security/test_injection_detector.py -v
+
+# 调试模式运行测试（显示 print 输出）
+python -m pytest tests/test_defi_integration.py -s -v
+# -s: 显示 print 输出
+# -v: 详细模式
 ```
 
 ### 运行系统
@@ -491,6 +515,398 @@ BOT_RATE_LIMIT_WINDOW=3600       # 时间窗口（秒）
    ```
 
 2. 预期成本：$0.15-0.30/次分析（GPT-4o-mini）
+
+## 调试和日志
+
+### 启用调试模式
+```python
+from defiagents.graph.trading_graph import TradingAgentsGraph
+from gemini_config import GEMINI_CONFIG
+
+agent = TradingAgentsGraph(config=GEMINI_CONFIG, debug=True)
+# 调试模式会打印每个 Agent 的输入/输出和工具调用详情
+```
+
+### 查看 LangGraph 节点输出
+```python
+result = agent.invoke(company_name="aave-v3", trade_date="2025-01-15")
+
+# 访问状态中的特定报告
+print(result["market_report"])        # 市场分析师报告
+print(result["trader_plan"])          # 交易员计划
+print(result["final_decision"])       # 最终决策
+
+# 查看所有可用字段
+print(result.keys())
+```
+
+### 工具调用日志
+所有工具函数内部已包含错误日志，失败时会返回友好错误信息：
+```
+❌ 错误: 无法获取 Uniswap 池数据
+原因: The Graph API rate limit exceeded
+建议: 稍后重试或检查 THE_GRAPH_API_KEY 配置
+```
+
+### Telegram Bot 日志
+Bot 日志包含用户请求、速率限制、分析进度等信息：
+```bash
+# 运行 Bot 时自动打印到控制台
+python3 run_bot.py
+
+# 查看日志示例：
+# INFO - 用户 123456789 请求分析: aave-v3
+# INFO - 速率限制检查: 3/10
+# INFO - 输入净化通过
+# INFO - 开始分析...
+# INFO - Phase 1 完成: 6个分析师报告已生成
+```
+
+## 开发工作流
+
+### 添加新的 DeFi 协议支持
+
+**步骤 1: 检查数据源支持**
+```bash
+# 检查协议是否在 DeFi Llama 中
+python -c "
+from defiagents.dataflows.defi.defillama import get_protocol_tvl
+print(get_protocol_tvl('compound-v3'))
+"
+```
+
+**步骤 2: 创建协议专属工具**（如需要）
+```python
+# defiagents/agents/utils/defi_protocol_tools.py
+from langchain.tools import tool
+from defiagents.dataflows.defi.defillama import get_protocol_tvl
+
+@tool
+def get_compound_markets(protocol: str = "compound-v3") -> str:
+    """获取 Compound 借贷市场数据
+
+    Args:
+        protocol: 协议 slug (默认 "compound-v3")
+
+    Returns:
+        Markdown 格式的市场数据
+    """
+    try:
+        # 调用数据源
+        tvl = get_protocol_tvl(protocol)
+
+        # 格式化为 Markdown
+        return f"""## Compound V3 市场概览
+
+**总锁仓价值 (TVL)**: ${tvl:,.0f}
+
+**支持资产**: USDC, ETH, WBTC
+**借贷利率**: 查看详细数据...
+"""
+    except Exception as e:
+        return f"❌ 错误: 无法获取 Compound 数据\n原因: {str(e)}"
+```
+
+**步骤 3: 注册工具到 Agent**
+```python
+# defiagents/graph/setup.py
+from defiagents.agents.utils.defi_protocol_tools import get_compound_markets
+
+# 在创建分析师时添加工具
+market_analyst = create_analyst_agent(
+    name="DeFi Market Analyst",
+    system_message=MARKET_ANALYST_PROMPT,
+    tools=[
+        get_protocol_tvl,
+        get_compound_markets,  # 添加新工具
+        # ... 其他工具
+    ],
+    state_key="market_report"
+)
+```
+
+**步骤 4: 测试新协议**
+```bash
+# 创建测试脚本
+python -c "
+from gemini_config import GEMINI_CONFIG
+from defiagents.graph.trading_graph import TradingAgentsGraph
+
+agent = TradingAgentsGraph(config=GEMINI_CONFIG, debug=True)
+result = agent.invoke(company_name='compound-v3', trade_date='2025-01-15')
+print(result['final_decision'])
+"
+```
+
+### 添加新的 Analyst Agent
+
+**步骤 1: 创建提示词模板**
+```python
+# defiagents/agents/analysts/new_analyst.py
+NEW_ANALYST_PROMPT = """
+你是一个 DeFi 安全审计专家。你的职责是：
+1. 分析协议的智能合约审计报告
+2. 评估历史安全事件和漏洞
+3. 检查多签钱包和治理机制
+4. 提供安全评分和风险建议
+
+使用提供的工具获取协议审计数据、历史漏洞记录等信息。
+
+输出格式：
+## 安全审计分析
+
+**审计覆盖率**: X%
+**历史漏洞**: 列表
+**风险评分**: X/10
+**建议**: ...
+"""
+```
+
+**步骤 2: 注册新 Agent 到状态**
+```python
+# defiagents/graph/state.py
+class TradingAgentsState(MessagesState):
+    # ... 现有字段
+    security_audit_report: str  # 添加新字段
+```
+
+**步骤 3: 在 setup.py 中创建和注册**
+```python
+# defiagents/graph/setup.py
+from defiagents.agents.analysts.new_analyst import NEW_ANALYST_PROMPT
+
+# 创建 Agent
+security_auditor = create_analyst_agent(
+    name="Security Auditor",
+    system_message=NEW_ANALYST_PROMPT,
+    tools=[get_audit_reports, get_security_incidents],
+    state_key="security_audit_report"
+)
+
+# 注册到 LangGraph
+graph.add_node("security_auditor", security_auditor)
+
+# 添加边（在 Phase 1 并行执行）
+graph.add_edge("market_analyst", "security_auditor")
+graph.add_edge("security_auditor", "research_team")
+```
+
+**步骤 4: 更新其他 Agent 提示词**
+确保下游 Agent（如 Research Manager）的提示词能看到新的报告：
+```python
+# defiagents/agents/researchers/research_manager.py
+RESEARCH_MANAGER_PROMPT = """
+你将收到以下报告：
+- 市场分析
+- 基本面分析
+- ...
+- **安全审计分析**（新增）
+
+综合所有报告生成投资建议...
+"""
+```
+
+### 添加新的数据源
+
+**步骤 1: 实现数据源客户端**
+```python
+# defiagents/dataflows/defi/new_source.py
+import requests
+from functools import lru_cache
+
+@lru_cache(maxsize=128)
+def get_data_from_new_source(protocol: str) -> dict:
+    """从新数据源获取协议数据
+
+    Args:
+        protocol: 协议 slug
+
+    Returns:
+        标准化的协议数据字典
+    """
+    try:
+        response = requests.get(
+            f"https://api.newsource.com/v1/protocols/{protocol}",
+            timeout=10
+        )
+        response.raise_for_status()
+
+        data = response.json()
+
+        # 标准化返回格式
+        return {
+            "tvl": float(data.get("tvl", 0)),
+            "apy": float(data.get("apy", 0)),
+            # ... 更多字段
+        }
+    except Exception as e:
+        raise RuntimeError(f"NewSource API 错误: {str(e)}")
+```
+
+**步骤 2: 更新配置**
+```python
+# defiagents/default_config.py
+DEFAULT_CONFIG = {
+    # ... 现有配置
+    "new_source": {
+        "api_url": "https://api.newsource.com/v1",
+        "api_key": os.getenv("NEW_SOURCE_API_KEY"),
+        "cache_ttl": 300,  # 5分钟缓存
+    }
+}
+```
+
+**步骤 3: 更新 .env.example**
+```bash
+# .env.example
+# ========== New Data Source ==========
+NEW_SOURCE_API_KEY=your_api_key_here
+```
+
+**步骤 4: 创建回退逻辑**（可选）
+```python
+# defiagents/dataflows/interface.py
+def get_protocol_tvl_with_fallback(protocol: str) -> float:
+    """多数据源回退机制"""
+    try:
+        return get_defillama_tvl(protocol)
+    except:
+        try:
+            return get_data_from_new_source(protocol)["tvl"]
+        except:
+            return get_thegraph_tvl(protocol)  # 最后回退
+```
+
+## 性能优化提示
+
+### LLM 模型选择策略
+
+**当前默认配置**（最优性价比）：
+```python
+# gemini_config.py
+config["llm"]["model"] = "gemini-2.0-flash-exp"
+config["llm"]["temperature"] = 0.7
+# 响应时间: ~2-3秒/调用
+# 成本: $0（免费额度）
+# 质量: 适合大多数 DeFi 分析场景
+```
+
+**高质量分析配置**（更慢但更准确）：
+```python
+config["llm"]["model"] = "gemini-1.5-pro"
+config["llm"]["temperature"] = 0.5
+# 响应时间: ~5-8秒/调用
+# 成本: $0.00125/1K tokens（输入）
+# 适用场景: 复杂协议分析、高风险决策
+```
+
+**快速测试配置**：
+```python
+config["llm"]["model"] = "gemini-2.0-flash-exp"
+config["llm"]["temperature"] = 1.0  # 更快但更随机
+# 响应时间: ~1-2秒/调用
+# 适用场景: 开发调试、单元测试
+```
+
+### 并行执行优化
+
+**Phase 1 自动并行**：
+6个分析师 Agent 已使用 LangGraph `send()` 机制并行执行，无需额外配置。单个分析师失败不会阻塞整体流程。
+
+**预期性能**：
+- 串行执行: 6 agents × 15秒 = 90秒
+- 并行执行: max(15秒) + 网络延迟 ≈ 20秒
+- **加速比**: ~4.5x
+
+**查看并行日志**：
+```python
+agent = TradingAgentsGraph(config=GEMINI_CONFIG, debug=True)
+# 日志会显示：
+# [Phase 1] Starting 6 analysts in parallel...
+# [Market Analyst] Completed in 12.3s
+# [Yield Analyst] Completed in 14.8s
+# ...
+```
+
+### 缓存策略
+
+**Layer 1 数据源缓存**（内存，跨调用）：
+```python
+# defiagents/dataflows/defi/defillama.py
+@lru_cache(maxsize=256)  # 缓存 256 个协议数据
+def get_protocol_tvl(slug: str) -> float:
+    # TTL: 1小时（隐式，通过 lru_cache）
+    pass
+```
+
+**当前 TTL 设置**：
+- DeFi Llama: 1小时（TVL 更新慢）
+- The Graph: 5分钟（链上数据更新快）
+- CoinGecko: 5分钟（价格波动快）
+
+**清除缓存**：
+```python
+from defiagents.dataflows.defi.defillama import get_protocol_tvl
+get_protocol_tvl.cache_clear()  # 清除 LRU 缓存
+```
+
+**持久化缓存**（计划中）：
+参见 `PROJECT_STATUS.md` 的"分析结果缓存机制"待办（Redis/TTLCache）。
+
+### 工具调用优化
+
+**减少不必要的工具调用**：
+在提示词中明确指示 Agent 优先使用已有信息：
+```python
+ANALYST_PROMPT = """
+...
+⚠️ 注意：优先分析已提供的数据，仅在必要时调用工具获取额外信息。
+避免重复调用相同参数的工具。
+"""
+```
+
+**工具超时设置**：
+```python
+# defiagents/dataflows/defi/defillama.py
+response = requests.get(url, timeout=10)  # 10秒超时
+```
+
+### Telegram Bot 优化
+
+**进度反馈频率**：
+```python
+# bot/handlers.py
+UPDATE_INTERVAL = 10  # 每10秒更新一次进度消息
+# 减少到 5 秒可提升用户体验，但增加 Telegram API 调用量
+```
+
+**消息分块发送**：
+```python
+# bot/formatters.py
+MAX_MESSAGE_LENGTH = 4096  # Telegram 限制
+# 自动拆分长消息为多条，避免截断
+```
+
+### 成本监控
+
+**估算单次分析成本**：
+```python
+# 使用 Gemini 免费层：$0
+# 使用 OpenAI GPT-4o-mini：
+# - ~15次 LLM 调用/分析
+# - ~500 tokens 输入/调用 × 15 = 7500 tokens
+# - ~1000 tokens 输出/调用 × 15 = 15000 tokens
+# - 成本: (7500×$0.15 + 15000×$0.60) / 1M ≈ $0.10/分析
+```
+
+**监控 API 使用量**：
+```bash
+# 查看 DeFi Llama 使用量（无限制）
+curl https://api.llama.fi/protocols/aave-v3
+
+# 查看 The Graph 使用量
+# 登录 https://thegraph.com/studio/ 查看剩余 queries
+```
 
 ## 📝 文档更新协议（重要！）
 

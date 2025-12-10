@@ -4,11 +4,70 @@ Telegram Bot配置
 管理Bot的配置参数和环境变量。
 """
 import os
-from typing import Optional
+from typing import Optional, Set
 from dotenv import load_dotenv
 
 # 加载环境变量
 load_dotenv()
+
+DEFAULT_REDIS_URL = "redis://localhost:6379/0"
+DEFAULT_CACHE_ENABLED = True
+DEFAULT_CACHE_TTL_SECONDS = 1800
+
+
+def _parse_admin_user_ids(env_value: str) -> Set[int]:
+    """Parse admin ids from environment, ignoring invalid entries."""
+    admin_ids: Set[int] = set()
+    for raw_id in env_value.split(","):
+        raw_id = raw_id.strip()
+        if not raw_id:
+            continue
+        try:
+            admin_ids.add(int(raw_id))
+        except ValueError:
+            # Ignore malformed ids silently to avoid breaking startup.
+            continue
+    return admin_ids
+
+
+def _load_admin_user_ids() -> Set[int]:
+    return _parse_admin_user_ids(os.getenv("BOT_ADMIN_USER_IDS", ""))
+
+
+def _parse_bool(value: Optional[str], default: bool) -> bool:
+    """Parse truthy/falsey strings with a safe default."""
+    if value is None:
+        return default
+
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _parse_cache_ttl(value: Optional[str], default: int = DEFAULT_CACHE_TTL_SECONDS) -> int:
+    """Parse cache TTL, falling back to default on invalid or negative values."""
+    if value is None:
+        return default
+
+    try:
+        ttl = int(value)
+    except (TypeError, ValueError):
+        return default
+
+    if ttl < 0:
+        return default
+    return ttl
+
+
+ADMIN_USER_IDS: Set[int] = _load_admin_user_ids()
+
+
+def is_admin(user_id: int) -> bool:
+    """检查用户是否为管理员"""
+    return user_id in ADMIN_USER_IDS
 
 
 class BotConfig:
@@ -37,13 +96,20 @@ class BotConfig:
         self.rate_limit_per_user = int(os.getenv("BOT_RATE_LIMIT_PER_USER", "10"))  # 每小时
         self.rate_limit_window = int(os.getenv("BOT_RATE_LIMIT_WINDOW", "3600"))  # 秒
 
+        # 缓存配置
+        redis_url_env = os.getenv("REDIS_URL")
+        self.redis_url = (redis_url_env or "").strip() or DEFAULT_REDIS_URL
+        self.cache_enabled = _parse_bool(os.getenv("BOT_CACHE_ENABLED"), DEFAULT_CACHE_ENABLED)
+        self.cache_ttl_seconds = _parse_cache_ttl(os.getenv("BOT_CACHE_TTL_SECONDS"))
+
         # Admin配置（可选）
-        admin_ids_str = os.getenv("BOT_ADMIN_USER_IDS", "")
-        self.admin_user_ids = [int(id.strip()) for id in admin_ids_str.split(",") if id.strip()]
+        global ADMIN_USER_IDS
+        ADMIN_USER_IDS = _load_admin_user_ids()
+        self.admin_user_ids = ADMIN_USER_IDS
 
     def is_admin(self, user_id: int) -> bool:
         """检查用户是否为管理员"""
-        return user_id in self.admin_user_ids
+        return is_admin(user_id)
 
 
 # 全局配置实例
@@ -58,7 +124,7 @@ def get_bot_config() -> BotConfig:
     return _config_instance
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover - manual debug helper
     # 测试配置加载
     try:
         config = get_bot_config()

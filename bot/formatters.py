@@ -4,8 +4,14 @@ Telegram消息格式化器
 将DeFi分析结果格式化为Telegram友好的Markdown消息。
 """
 import re
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime
+
+
+def add_cache_marker(message: str, cached_at: float) -> str:
+    """Append a cache marker with human-readable timestamp to a message."""
+    cached_time = datetime.fromtimestamp(cached_at).strftime("%H:%M")
+    return f"{message}\n\n📦 来自缓存（生成于 {cached_time}）"
 
 
 class TelegramFormatter:
@@ -83,6 +89,81 @@ DEX：Uniswap, Curve, Balancer
 ⚠️ 请自行承担投资风险。
 ⚠️ 我们不托管资金，不进行任何交易。
         """.strip()
+
+    def format_status_message(
+        self,
+        health_status: Dict[str, Dict[str, Any]],
+        rate_limit_status: Dict[str, Any],
+        is_admin: bool = False,
+        global_stats: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """
+        格式化系统状态消息（/status）
+
+        Args:
+            health_status: 数据源健康状态，格式 {key: {"name": str, "status": str, "detail": str?}}
+            rate_limit_status: 速率限制信息，包含 used、limit、reset_in_seconds/reset_at
+            is_admin: 是否为管理员视图
+            global_stats: 管理员可见的全局统计
+        """
+        emoji_map = {
+            "online": "✅",
+            "offline": "❌",
+            "degraded": "⚠️",
+            "configured": "✅",
+        }
+        label_map = {
+            "online": "Online",
+            "offline": "Offline",
+            "degraded": "Degraded",
+            "configured": "Configured",
+        }
+
+        lines: List[str] = ["📊 系统状态", "", "🔌 数据源健康度"]
+        for source_key, info in (health_status or {}).items():
+            name = info.get("name") or source_key
+            status_raw = str(info.get("status", "offline")).lower()
+            emoji = emoji_map.get(status_raw, "⚠️")
+            label = label_map.get(status_raw, status_raw.title() if status_raw else "Unknown")
+            detail = info.get("detail")
+
+            escaped_name = self._escape_markdown_content(str(name))
+            line = f"{emoji} {escaped_name}: {label}"
+            if detail:
+                escaped_detail = self._escape_markdown_content(str(detail))
+                line += f" ({escaped_detail})"
+            lines.append(line)
+
+        if len(lines) == 3:  # 没有任何数据源
+            lines.append("⚠️ 暂无健康检查数据")
+
+        lines.append("")
+        lines.append("⏱️ 速率限制状态")
+        used = int(rate_limit_status.get("used") or rate_limit_status.get("used_requests") or 0)
+        limit = int(rate_limit_status.get("limit") or rate_limit_status.get("limit_per_user") or 0)
+        lines.append(f"已使用: {used}/{limit} 次")
+
+        reset_seconds = self._resolve_reset_seconds(rate_limit_status)
+        lines.append(f"重置时间: {self._format_reset_time(reset_seconds)}")
+
+        if is_admin:
+            stats = global_stats or {}
+            total_requests = int(stats.get("total_requests") or stats.get("requests") or 0)
+            active_users = int(stats.get("active_users") or stats.get("active_user_count") or 0)
+            avg_resp = stats.get("avg_response_time") or stats.get("average_response_time")
+            uptime_seconds = stats.get("uptime_seconds") or stats.get("uptime")
+
+            lines.append("")
+            lines.append("📈 全局统计 (仅管理员可见)")
+            lines.append(f"总请求数: {total_requests:,} 次")
+            lines.append(f"活跃用户: {active_users:,} 人")
+            if avg_resp is not None:
+                lines.append(f"平均响应时间: {float(avg_resp):.1f} 秒")
+            else:
+                lines.append("平均响应时间: -")
+            lines.append(f"Bot 运行时间: {self._format_uptime(uptime_seconds)}")
+
+        return self._truncate_message("\n".join(lines))
 
     def format_progress(self, step: str, current: int, total: int) -> str:
         """
@@ -284,13 +365,18 @@ DEX：Uniswap, Curve, Balancer
         if len(message) <= self.max_length:
             return message
 
-        # 截断并添加省略标记
-        truncated = message[: self.max_length - 100]
+        suffix = "\n\n... (消息过长，已截断)"
+        if self.max_length <= len(suffix):
+            # 极端情况下只返回提示
+            return suffix[-self.max_length :]
+
+        available = self.max_length - len(suffix)
+        truncated = message[:available]
         last_newline = truncated.rfind("\n")
         if last_newline > 0:
             truncated = truncated[:last_newline]
 
-        return truncated + "\n\n... (消息过长，已截断)"
+        return truncated + suffix
 
     def format_error(self, error_message: str) -> str:
         """格式化错误消息"""
@@ -323,29 +409,84 @@ DEX：Uniswap, Curve, Balancer
 
         return msg
 
+    def _resolve_reset_seconds(self, rate_limit_status: Dict[str, Any]) -> Optional[float]:
+        """解析速率限制剩余秒数"""
+        if not rate_limit_status:
+            return None
+
+        for key in ("reset_in_seconds", "reset_seconds", "reset_after_seconds"):
+            if key in rate_limit_status:
+                try:
+                    return float(rate_limit_status[key])
+                except (TypeError, ValueError):
+                    return None
+
+        if "reset_at" in rate_limit_status:
+            reset_at = rate_limit_status["reset_at"]
+            if isinstance(reset_at, datetime):
+                return max(0.0, (reset_at - datetime.now()).total_seconds())
+            if isinstance(reset_at, (int, float)):
+                return max(0.0, reset_at - datetime.now().timestamp())
+
+        return None
+
+    def _format_reset_time(self, seconds: Optional[float]) -> str:
+        """将剩余秒数转换为友好的描述"""
+        if seconds is None:
+            return "未知"
+
+        try:
+            remaining = float(seconds)
+        except (TypeError, ValueError):
+            return "未知"
+
+        if remaining <= 0:
+            return "已重置"
+
+        minutes = int(remaining // 60)
+        hours = minutes // 60
+        days = hours // 24
+
+        if remaining < 60:
+            return "不到1分钟后"
+
+        if days:
+            hours_part = hours % 24
+            return f"{days}天 {hours_part}小时后" if hours_part else f"{days}天后"
+
+        if hours:
+            minutes_part = minutes % 60
+            return f"{hours}小时{minutes_part}分钟后" if minutes_part else f"{hours}小时后"
+
+        minutes = max(1, minutes)
+        return f"{minutes}分钟后"
+
+    def _format_uptime(self, seconds: Optional[float]) -> str:
+        """将运行时长格式化为天/小时/分钟"""
+        if seconds is None:
+            return "-"
+
+        try:
+            total_seconds = int(float(seconds))
+        except (TypeError, ValueError):
+            return "-"
+
+        days, remainder = divmod(total_seconds, 86400)
+        hours, remainder = divmod(remainder, 3600)
+        minutes, _ = divmod(remainder, 60)
+
+        parts = []
+        if days:
+            parts.append(f"{days}天")
+        if hours:
+            parts.append(f"{hours}小时")
+        if minutes or not parts:
+            parts.append(f"{minutes}分钟")
+
+        return " ".join(parts)
+
 
 if __name__ == "__main__":
-    # 测试格式化器
+    # 保留入口以便手动调试
     formatter = TelegramFormatter()
-
-    print("=== 欢迎消息 ===")
     print(formatter.format_welcome())
-    print("\n" + "="*80 + "\n")
-
-    print("=== 帮助消息 ===")
-    print(formatter.format_help())
-    print("\n" + "="*80 + "\n")
-
-    print("=== 进度消息 ===")
-    print(formatter.format_progress("DeFi Market Analyst正在工作...", 3, 8))
-    print("\n" + "="*80 + "\n")
-
-    print("=== 错误消息 ===")
-    print(formatter.format_error("分析超时，请稍后重试"))
-    print("\n" + "="*80 + "\n")
-
-    print("=== 安全拒绝消息 ===")
-    print(formatter.format_security_rejection(
-        "检测到可疑的系统命令",
-        ["使用DeFi相关术语", "描述具体的投资需求"]
-    ))
