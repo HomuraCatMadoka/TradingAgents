@@ -48,6 +48,10 @@ def _normalize_tvl(tvl_value: Any) -> float:
         # If list of numbers, sum them (multi-chain TVL)
         if isinstance(tvl_value[0], (int, float)):
             return float(sum(tvl_value))
+        # If list of dicts with historical data (date + totalLiquidityUSD)
+        if isinstance(tvl_value[0], dict) and 'totalLiquidityUSD' in tvl_value[0]:
+            # Return the latest (last) value
+            return float(tvl_value[-1].get('totalLiquidityUSD', 0))
         # If list of dicts, sum their tvl fields recursively
         return sum(_normalize_tvl(item.get('tvl', 0)) for item in tvl_value if isinstance(item, dict))
 
@@ -170,7 +174,8 @@ class DefiLlamaAPI:
             Current TVL in USD
         """
         data = self.get_protocol(slug)
-        return data.get('tvl', 0.0)
+        tvl_value = data.get('tvl', 0.0)
+        return _normalize_tvl(tvl_value)
 
     def get_historical_tvl(self, slug: str) -> List[Dict]:
         """
