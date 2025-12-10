@@ -6,9 +6,9 @@
 > - 历史记录见 [DeFiAgent_CHANGELOG.md](DeFiAgent_CHANGELOG.md)（只追加，不修改）
 > - 完整文档索引见 [docs/README.md](docs/README.md)
 
-**最后更新**: 2025-12-10
-**当前阶段**: Phase 3.3 安全增强完成
-**本次更新**: S6 审计日志系统（SQLite 审计表 + Bot 集成 + `/audit_stats` 管理命令）
+**最后更新**: 2025-12-11
+**当前阶段**: Messari Schema 重构 - Phase 1 完成
+**本次更新**: Messari 客户端、多源回退机制、配置集成（99% 覆盖率，34 个测试通过）
 
 ---
 
@@ -88,7 +88,36 @@
   - Backtrader 回测封装与指标计算（收益率/夏普/回撤/胜率）
   - backtesting 包测试覆盖率 95%（数据加载/引擎/指标/CLI/Bot 集成）
 
-### 🔄 性能指标（截至 2025-12-10）
+#### 🚀 Messari Schema 重构 - Phase 1: 基础设施（已完成于 2025-12-11）
+- [x] **Messari 客户端实现**（defiagents/dataflows/defi/messari.py）
+  - 支持 176 个协议查询（从 deployment.json 加载）
+  - 支持 15+ 条链（ethereum, arbitrum, optimism, polygon, base 等）
+  - 1 小时 TTL 缓存机制
+  - 错误分类处理（404/429/Network/Unknown）
+  - 测试覆盖率 **99%**（21 个测试全部通过）
+- [x] **多源回退机制**（defiagents/dataflows/interface.py）
+  - 责任链模式：Messari → DeFi Llama → The Graph → RPC
+  - 错误分类回退（404/429 立即回退，网络错误重试1次）
+  - 7 个测试场景全部通过
+- [x] **数据格式标准化**（defiagents/dataflows/defi/adapters.py）
+  - 统一 Messari/DeFi Llama/The Graph 三种数据格式
+  - TVL、Lending markets、DEX pools 格式转换
+  - 缺失字段默认值处理
+  - 测试覆盖率 84%
+- [x] **配置系统集成**（defiagents/default_config.py）
+  - 新增 messari 配置节（api_key, api_url, cache_ttl 等）
+  - 新增 data_source_priority 配置（各方法的回退优先级）
+  - 环境变量 MESSARI_API_KEY 支持
+- [x] **完整测试套件**（tests/dataflows/）
+  - 34 个测试全部通过
+  - 100% Mock 测试（0 次真实 API 调用，$0 成本）
+  - Mock fixtures 覆盖成功/404/429/timeout 场景
+
+**开发时间**: ~4 小时（预估 5-6 人天，提前完成）
+**代码改动**: ~900 行（新增 750 行，修改 150 行）
+**下一步**: Phase 2 - 核心数据源迁移（重构 defillama.py, the_graph.py）
+
+### 🔄 性能指标（截至 2025-12-11）
 
 | 指标 | 当前值 | 目标 | 状态 |
 |------|--------|------|------|
@@ -110,7 +139,7 @@
 | 问题 | 影响 | 临时方案 | 优先级 | 文档位置 |
 |------|------|---------|--------|---------|
 | DeFi Llama TVL 类型不一致 | 已修复 | `_normalize_tvl()` 递归规范化 | ✅ 已解决 | [CHANGELOG:169](DeFiAgent_CHANGELOG.md#问题1-defi-llama-tvl类型错误) |
-| The Graph Aave V3 子图过时 | 无法获取实时借贷数据 | 使用 DeFi Llama 作为主数据源 | 🟢 低 | [测试文档:328](测试文档.md#问题3-aave-v3-subgraph过时) |
+| The Graph Aave V3 子图过时 | 无法获取实时借贷数据 | ⚡ Phase 2 将用 Messari 替代 | 🔵 进行中 | [测试文档:328](测试文档.md#问题3-aave-v3-subgraph过时) |
 | Telegram Markdown 解析错误 | 已修复 | 转义特殊字符 | ✅ 已解决 | [CHANGELOG](#错误-6) |
 | GraphQL Transport 连接冲突 | 已修复 | 每次创建新 transport | ✅ 已解决 | [CHANGELOG](#错误-7) |
 

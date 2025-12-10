@@ -1,4 +1,8 @@
+import logging
 import os
+from typing import Dict
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG = {
     "project_dir": os.path.abspath(os.path.join(os.path.dirname(__file__), ".")),
@@ -94,6 +98,32 @@ DEFAULT_CONFIG = {
         },
     },
 
+    # ========== Messari Configuration ==========
+    "messari": {
+        "api_key": os.getenv("MESSARI_API_KEY", ""),
+        "api_url": "https://gateway.thegraph.com/api",
+        "deployment_json_path": os.path.abspath(
+            os.getenv(
+                "MESSARI_DEPLOYMENT_JSON_PATH",
+                os.path.join(
+                    os.path.dirname(__file__),
+                    "../subgraph/deployment/deployment.json",
+                ),
+            )
+        ),
+        "cache_ttl": 3600,  # Cache TTL in seconds (1 hour)
+        "rate_limit_per_minute": 60,
+        "timeout_seconds": 10,
+    },
+
+    # ========== Data Source Priority Configuration ==========
+    "data_source_priority": {
+        "protocol_tvl": ["messari", "defillama", "the_graph", "onchain_rpc"],
+        "lending_markets": ["messari", "the_graph", "defillama"],
+        "dex_pools": ["messari", "the_graph"],
+        "token_prices": ["coingecko", "defillama"],
+    },
+
     # ========== DeFi Llama Configuration ==========
     "defillama": {
         "api_url": "https://api.llama.fi",
@@ -130,3 +160,15 @@ DEFAULT_CONFIG = {
         "rate_limit": 10,     # Requests per minute per user
     },
 }
+
+
+def validate_messari_config(config: Dict) -> None:
+    """验证 Messari 配置完整性。"""
+    assert "messari" in config, "Missing 'messari' config section"
+
+    messari_cfg = config["messari"]
+    assert messari_cfg.get("deployment_json_path"), "deployment_json_path not set"
+
+    path = messari_cfg["deployment_json_path"]
+    if not os.path.exists(path):
+        logger.warning("Deployment JSON not found: %s", path)

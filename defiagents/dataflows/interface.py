@@ -1,4 +1,8 @@
-from typing import Annotated
+import logging
+from enum import Enum
+from typing import Any, Dict, List, Sequence
+
+import requests
 
 # Import from vendor-specific modules
 from .local import get_YFin_data, get_finnhub_news, get_finnhub_company_insider_sentiment, get_finnhub_company_insider_transactions, get_simfin_balance_sheet, get_simfin_cashflow, get_simfin_income_statements, get_reddit_global_news, get_reddit_company_news
@@ -19,6 +23,10 @@ from .alpha_vantage_common import AlphaVantageRateLimitError
 
 # Configuration and routing logic
 from .config import get_config
+from .defi.messari import MessariNotFoundError, MessariRateLimitError
+
+
+logger = logging.getLogger(__name__)
 
 # Tools organized by category
 TOOLS_CATEGORIES = {
@@ -60,6 +68,21 @@ VENDOR_LIST = [
     "openai",
     "google"
 ]
+
+
+class DataSourceType(Enum):
+    MESSARI = "messari"
+    DEFILLAMA = "defillama"
+    THE_GRAPH = "the_graph"
+    ONCHAIN_RPC = "onchain_rpc"
+
+
+class FallbackError(Exception):
+    """回退链路相关的基类异常。"""
+
+
+class AllSourcesFailedError(FallbackError):
+    """所有数据源均失败。"""
 
 # Mapping of methods to their vendor-specific implementations
 VENDOR_METHODS = {
@@ -242,3 +265,128 @@ def route_to_vendor(method: str, *args, **kwargs):
     else:
         # Convert all results to strings and concatenate
         return '\n'.join(str(result) for result in results)
+
+
+# ========== 多源回退机制（Messari Schema 重构） ==========
+
+def _normalize_data(method: str, data: Any, source: DataSourceType) -> Any:
+    """根据方法名选择适配器进行数据标准化。"""
+    try:
+        from defiagents.dataflows.defi.adapters import DataAdapter
+    except Exception as exc:  # pragma: no cover - 导入失败属于环境问题
+        logger.warning("无法导入 DataAdapter，返回原始数据: %s", exc)
+        return data
+
+    if method == "get_protocol_tvl":
+        return DataAdapter.normalize_tvl(data, source)
+    if method == "get_lending_markets":
+        return DataAdapter.normalize_lending_markets(data, source)
+    if method == "get_dex_pools":
+        return DataAdapter.normalize_dex_pools(data, source)
+    return data
+
+
+def _call_source_method(source: DataSourceType, protocol: str, method: str, **kwargs) -> Any:
+    """调用指定数据源的对应方法。"""
+    if source == DataSourceType.MESSARI:
+        from defiagents.dataflows.defi.messari import MessariClient
+
+        client = MessariClient()
+        func = getattr(client, method, None)
+        if not callable(func):
+            raise FallbackError(f"Messari 不支持方法 {method}")
+        return func(protocol, **kwargs)
+
+    if source == DataSourceType.DEFILLAMA:
+        from defiagents.dataflows.defi.defillama import DefiLlamaAPI
+
+        client = DefiLlamaAPI()
+        func = getattr(client, method, None)
+        if callable(func):
+            return func(protocol, **kwargs)
+        if method == "get_protocol_tvl":
+            return client.get_tvl(protocol)
+        raise FallbackError(f"DeFi Llama 不支持方法 {method}")
+
+    if source == DataSourceType.THE_GRAPH:
+        from defiagents.dataflows.defi.the_graph import TheGraphClient
+
+        client = TheGraphClient()
+        func = getattr(client, method, None)
+        if callable(func):
+            return func(protocol, **kwargs)
+        if method == "get_protocol_tvl":
+            subgraph_id = kwargs.get("subgraph_id")
+            query = kwargs.get("query")
+            variables = kwargs.get("variables")
+            if not subgraph_id or not query:
+                raise FallbackError("The Graph 查询缺少 subgraph_id 或 query")
+            return client.query(subgraph_id, query, variables)
+        raise FallbackError(f"The Graph 不支持方法 {method}")
+
+    if source == DataSourceType.ONCHAIN_RPC:
+        from defiagents.dataflows.defi.onchain import OnChainClient
+
+        client = OnChainClient()
+        func = getattr(client, method, None)
+        if callable(func):
+            return func(protocol, **kwargs)
+        raise FallbackError(f"On-chain RPC 不支持方法 {method}")
+
+    raise FallbackError(f"未知数据源: {source}")
+
+
+def get_data_with_fallback(protocol: str, method: str, sources: Sequence[DataSourceType], **kwargs) -> Any:
+    """
+    按优先级依次调用数据源，处理错误分类与重试。
+
+    - MessariNotFoundError / MessariRateLimitError: 立即回退
+    - requests.Timeout / requests.ConnectionError: 重试 1 次后回退
+    - 其他异常: 记录后继续回退
+    """
+    errors: List[tuple[DataSourceType, str, str]] = []
+    last_error: Exception | None = None
+
+    for source in sources:
+        try:
+            logger.info("尝试从 %s 获取 %s: %s", source.value, method, protocol)
+            raw = _call_source_method(source, protocol, method, **kwargs)
+            normalized = _normalize_data(method, raw, source)
+            logger.info("数据源 %s 成功", source.value)
+            return normalized
+
+        except MessariNotFoundError as exc:
+            logger.warning("Messari 未找到资源，回退: %s", exc)
+            errors.append((source, "not_found", str(exc)))
+            last_error = exc
+            continue
+        except MessariRateLimitError as exc:
+            logger.warning("Messari 限流，回退: %s", exc)
+            errors.append((source, "rate_limit", str(exc)))
+            last_error = exc
+            continue
+        except (requests.Timeout, requests.ConnectionError) as exc:
+            logger.warning("数据源 %s 网络错误，重试一次: %s", source.value, exc)
+            try:
+                raw = _call_source_method(source, protocol, method, **kwargs)
+                normalized = _normalize_data(method, raw, source)
+                logger.info("数据源 %s 重试成功", source.value)
+                return normalized
+            except Exception as retry_error:  # noqa: BLE001
+                logger.warning("数据源 %s 重试失败: %s", source.value, retry_error)
+                errors.append((source, "network_error", str(exc)))
+                last_error = retry_error
+                continue
+        except Exception as exc:  # noqa: BLE001
+            logger.error("数据源 %s 异常，回退: %s", source.value, exc)
+            errors.append((source, "unknown_error", str(exc)))
+            last_error = exc
+            continue
+
+    summary_lines = [
+        f"- {source.value}: [{err_type}] {message}" for source, err_type, message in errors
+    ]
+    summary = "\n".join(summary_lines)
+    raise AllSourcesFailedError(
+        f"所有数据源均失败: {protocol}.{method}\n{summary}"
+    ) from last_error
