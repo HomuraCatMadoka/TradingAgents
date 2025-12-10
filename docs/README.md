@@ -50,12 +50,13 @@
 |------|------|---------|
 | [项目状态跟踪](../PROJECT_STATUS.md) | ⭐ 活跃待办清单、当前状态、安全改进（主要跟踪文档） | 2025-12-10 |
 | [CLAUDE.md](../CLAUDE.md) | 架构概览、常用命令、关键设计决策、文档更新协议 | 2025-12-10 |
-| [开发日志](../DeFiAgent_CHANGELOG.md) | Phase 1-2 完整开发记录（历史，只追加） | 2025-12-10 |
+| [开发日志](../DeFiAgent_CHANGELOG.md) | Phase 1-3 完整开发记录（历史，只追加） | 2025-12-10 |
 | [测试文档](../测试文档.md) | 测试状态、协议覆盖、待优化项 | 2025-12-10 |
 | [Bot 测试指南](Telegram_Bot_Testing_Guide.md) | 手动测试流程和验收标准 | 2025-12-10 |
 | [贡献指南](CONTRIBUTING.md) | 分支策略、提交规范、PR Checklist、常见问题 | 2025-12-10 |
 | [API 设计规范](API_DESIGN.md) | 路径命名、错误响应、分页/排序、版本策略 | 2025-12-10 |
 | [前端开发指南](FRONTEND_GUIDE.md) | 目录结构、状态管理、样式、安全与性能 | 2025-12-10 |
+| [安全层技术规格](../.claude/specs/security-validation-layers/dev-plan.md) | S1/S2 验证层设计、数据模型、集成点 | 2025-12-10 |
 
 ### 规划文档（Planning Docs）
 项目路线图和改进计划：

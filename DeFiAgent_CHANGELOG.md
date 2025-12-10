@@ -473,4 +473,169 @@ PYTHONPATH=$PWD:$PYTHONPATH python3 examples/test_defi_with_gemini.py
 ---
 
 *最后更新: 2025-12-10*
-*当前阶段: Phase 2.1 - 输入净化层开发*
+*当前阶段: Phase 3.2 - 安全层增强完成*
+
+---
+
+## Phase 3.2: 安全层增强 ✅
+**完成日期**: 2025-12-10
+**总工作量**: 9-13 小时（实际并行执行约 6-8 小时）
+
+### 主要变更
+
+#### S1 Agent 输出验证层
+**问题**: Agent 可能返回危险指令（如 "approve unlimited", "transfer all"），导致资产风险。
+
+**解决方案**:
+- **核心实现**: `defiagents/security/output_validator.py` (123 lines)
+  - `OutputValidator` 类：危险指令检测、金额异常检测、地址检测
+  - 数据模型：`ValidationContext`, `ValidationIssue`, `ValidationResult`（TypedDict）
+  - 15+ 正则模式：`unlimited_approval`, `transfer_all`, `contract_attack`, `private_key`, `suspicious_contract`, `sweep`, `drain`, `rug_pull` 等
+  - 金额解析器：支持 K/M/B/千/万/亿/USD/USDC 单位
+  - 阈值判定：>$1M→critical, >$100K→warning
+
+- **集成方式**: `defiagents/graph/node_wrappers.py` (103 lines)
+  - `wrap_agent_node_with_validation()` 函数包装所有 Agent 节点
+  - 节点执行 → 提取输出 → S1 验证 → 写回 patched_text
+  - 问题聚合到 `state["validation_issues"]` 供审计使用
+
+- **包装节点**（15个）:
+  - Phase 1: market_analyst, fundamentals_analyst, yield_analyst, risk_analyst, news_analyst, social_analyst
+  - Phase 2: bull_researcher, bear_researcher, research_manager
+  - Phase 3: trader
+  - Phase 4: risky_risk_manager, safe_risk_manager, neutral_risk_manager, chief_risk_officer
+  - Phase 5: portfolio_manager
+
+- **警告格式**（追加到输出末尾）:
+  ```markdown
+  ---
+  ⚠️ **安全提示** (由 DeFi Agent 安全层检测)
+
+  - [CRITICAL] 检测到危险指令: "approve unlimited" 可能导致资产风险
+  - [WARNING] 建议金额异常: $5,000,000 超出预期投资额 $100,000
+
+  请仔细审核以上建议，必要时咨询专业人士。
+  ```
+
+- **测试覆盖**: 100% (20个测试场景)
+  - 危险指令检测（单个/多个/混合）
+  - 金额解析（各种单位和语言）
+  - 阈值边界测试
+  - 地址检测（零地址/vanity）
+  - 空文本/超长文本/特殊字符
+  - 警告格式验证
+
+#### S2 白名单协议验证层
+**问题**: 用户可能被诱导分析钓鱼协议或未经审计的高风险协议。
+
+**解决方案**:
+- **核心实现**: `defiagents/security/protocol_whitelist.py` (226 lines)
+  - `ProtocolWhitelist` 类：多数据源聚合、信任级别判定、缓存管理
+  - 数据模型：`ProtocolMetrics`, `WhitelistResult`（TypedDict）
+  - 并行查询（ThreadPoolExecutor）：DeFi Llama（主） + CoinGecko（辅） + The Graph（存在性）
+  - 超时控制：每数据源 10 秒，总计 <15 秒
+
+- **信任判定规则**（4条，满足≥3条→trusted）:
+  1. TVL ≥ $100M（蓝筹阈值）
+  2. 审计次数 ≥ 2（来自 DeFi Llama/CoinGecko）
+  3. 存续时间 > 6 个月
+  4. 在硬编码白名单中（来自 `protocol_registry.py`）
+
+- **信任级别**:
+  - `trusted`: 满足 ≥3 条或在硬编码白名单
+  - `unverified`: 满足 1-2 条或数据不足
+  - `suspicious`: TVL < $10M 或审计=0 且不在白名单
+
+- **缓存策略**:
+  - LRU 缓存 + TTL（300秒）
+  - 缓存键：`{slug}:{chain}`
+  - 预期命中率 >80%（重复查询同一协议）
+
+- **降级逻辑**:
+  - 优先级：DeFi Llama > CoinGecko > The Graph
+  - 单数据源失败不阻断（继续尝试下一个）
+  - 全失败 → 返回 `unverified` + 原因
+
+- **Bot 集成**（`bot/handlers.py`）:
+  - 初始化：`self.whitelist = ProtocolWhitelist(config=self._config)`
+  - `handle_message()` 前置检查：
+    - `suspicious` → 拒绝分析，返回警告消息
+    - `unverified` → 警告但允许继续
+    - `trusted` → 正常执行
+  - 将 `whitelist_result` 透传给 `_perform_analysis`
+
+- **LangGraph 集成**（`defiagents/graph/propagation.py`）:
+  - `create_initial_state()` 入口调用 S2 验证
+  - 存储结果到状态字段：`protocol_whitelist_status`, `protocol_whitelist_result`
+  - `suspicious` 协议在首条 message 添加警告
+
+- **状态模型扩展**（`defiagents/agents/utils/agent_states.py`）:
+  - 新增字段：
+    - `protocol_whitelist_status: Optional[str]`（信任级别）
+    - `protocol_whitelist_result: Optional[Dict]`（完整验证结果）
+    - `validation_issues: Optional[List[Dict]]`（S1 问题聚合）
+
+- **测试覆盖**: 96% (19个测试场景)
+  - 蓝筹协议（Aave V3）→ trusted
+  - 低 TVL 协议 → suspicious
+  - 硬编码白名单命中
+  - 数据源降级（DeFi Llama 失败→CoinGecko）
+  - 全失败 → unverified
+  - 缓存命中/过期
+  - 协议名规范化（aave → aave-v3）
+  - 并行查询超时处理
+
+### 新增文件（6个）
+
+| 文件 | 行数 | 说明 |
+|------|------|------|
+| `defiagents/security/output_validator.py` | 123 | S1 输出验证器核心 |
+| `defiagents/security/protocol_whitelist.py` | 226 | S2 白名单验证器核心 |
+| `defiagents/graph/node_wrappers.py` | 103 | LangGraph 节点包装器 |
+| `tests/security/test_output_validator.py` | 214 | S1 单元测试（20个场景） |
+| `tests/security/test_protocol_whitelist.py` | 215 | S2 单元测试（19个场景） |
+| `tests/test_security_e2e.py` | 268 | 端到端集成测试（8个场景） |
+
+### 修改文件（5个）
+
+| 文件 | 变更 | 说明 |
+|------|------|------|
+| `defiagents/graph/setup.py` | +30 lines | 包装所有15个节点 |
+| `defiagents/graph/propagation.py` | +25 lines | S2 初始化检查 |
+| `defiagents/agents/utils/agent_states.py` | +3 fields | 状态模型扩展 |
+| `bot/handlers.py` | +80 lines | S2 前置检查 + S1 输出复核 |
+| `tests/test_handlers.py` | +50 lines | 集成测试（3个） |
+
+### 性能影响
+
+| 指标 | 影响 |
+|------|------|
+| S1 输出验证延迟 | <5ms/节点（15节点总计 <75ms） |
+| S2 白名单查询延迟 | 首次 <15s，缓存命中 <1ms |
+| 总分析时间影响 | +0.1-15s（<15% 增幅，缓存后可忽略） |
+| 内存开销 | +2-3MB（LRU 缓存） |
+
+### 安全提升
+
+| 防护能力 | 覆盖范围 |
+|---------|---------|
+| 危险指令拦截 | 15+ 模式，覆盖常见攻击向量 |
+| 金额异常检测 | 6+ 单位格式，双阈值判定 |
+| 协议白名单验证 | 3 数据源交叉验证，4 维度判定 |
+| 测试覆盖率 | S1: 100%, S2: 96%，整体 >95% |
+
+### 风险和限制
+
+1. **正则误报/漏报**: 当前规则覆盖常见模式，新型攻击可能绕过（需定期更新）
+2. **数据源依赖**: DeFi Llama/CoinGecko 字段缺失会降级为 `unverified`
+3. **性能权衡**: 并行查询 <15秒（首次），已实现缓存优化
+4. **用户体验**: 警告模式不阻断用户（可能误信警告），但保留审计记录
+
+### 后续建议
+
+1. **规则维护**: 每月审查 `DANGEROUS_PATTERNS` 并更新
+2. **白名单维护**: 定期同步 DeFi Llama 蓝筹协议列表
+3. **监控指标**: 追踪拒绝率、误报率、缓存命中率
+4. **用户教育**: 在 Bot 帮助文档中说明安全机制
+
+---

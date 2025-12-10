@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime
+from unittest.mock import Mock
 
 import pytest
 
@@ -531,3 +532,143 @@ async def test_status_command(monkeypatch, handler_factory):
 @pytest.mark.anyio
 async def test_cache_integration(monkeypatch, handler_factory):
     await _run_cache_flow(monkeypatch, handler_factory)
+
+
+@pytest.mark.anyio
+async def test_whitelist_blocks_suspicious_message(handler_factory):
+    handler, _, _, _ = handler_factory(per_user="5")
+    handler.formatter = DummyFormatter()
+    handler.config.enable_input_sanitization = True  # 确保启用输入净化
+
+    class SuspiciousWhitelist:
+        def check(self, slug_or_name, chain=None):
+            return {
+                "status": "suspicious",
+                "protocol_slug": slug_or_name,
+                "metrics": {},
+                "confidence_score": 0.1,
+                "data_sources": [],
+                "reason": "flagged as高风险",
+            }
+
+    handler.whitelist = SuspiciousWhitelist()
+
+    # Mock sanitizer to extract protocol name
+    from defiagents.security.input_sanitizer import SanitizationResult
+    from defiagents.security.intent_extractor import InvestmentIntent
+    handler._sanitizer = Mock()
+    handler._sanitizer.sanitize.return_value = SanitizationResult(
+        is_safe=True,
+        risk_score=0.1,
+        rejection_reason=None,
+        sanitized_input="aave-v3",
+        intent=InvestmentIntent(
+            protocol_name="aave-v3",
+            investment_amount=None,
+            risk_preference=None,
+            protocol_type=None,
+            target_apy=None,
+            chain=None,
+            tokens=None,
+            confidence=0.8
+        ),
+        confidence=0.8
+    )
+
+    async def should_not_run(*args, **kwargs):
+        raise AssertionError("analysis should not run for suspicious protocols")
+
+    handler._perform_analysis = should_not_run
+
+    update = FakeUpdate(user_id=501, text="analyze aave-v3")
+    await handler.handle_message(update, FakeContext())
+    assert any("suspicious" in reply.lower() or "高风险" in reply for reply in update.message.replies)
+
+
+@pytest.mark.anyio
+async def test_whitelist_warns_unverified_and_continues(handler_factory):
+    handler, _, _, _ = handler_factory(per_user="5")
+    handler.formatter = DummyFormatter()
+
+    class UnverifiedWhitelist:
+        def check(self, slug_or_name, chain=None):
+            return {
+                "status": "unverified",
+                "protocol_slug": slug_or_name,
+                "metrics": {},
+                "confidence_score": 0.5,
+                "data_sources": ["stub"],
+                "reason": "no data",
+            }
+
+    handler.whitelist = UnverifiedWhitelist()
+    calls = {}
+
+    async def should_run(update, query, **kwargs):
+        calls["called"] = True
+        calls["kwargs"] = kwargs
+
+    handler._perform_analysis = should_run
+
+    update = FakeUpdate(user_id=503, text="maybe protocol")
+    await handler.analyze_command(update, FakeContext(args=["maybe-proto"]))
+    assert calls.get("called")
+    assert any("未在白名单" in reply for reply in update.message.replies)
+
+
+@pytest.mark.anyio
+async def test_output_validation_patches_final_decision(handler_factory):
+    handler, _, _, _ = handler_factory(per_user="5")
+    handler.config.cache_enabled = False
+
+    class RecordingFormatter(DummyFormatter):
+        def __init__(self):
+            super().__init__()
+            self.payloads = []
+
+        def format_analysis_result(self, result):
+            self.payloads.append(result)
+            return ["done"]
+
+    class PatchedValidator:
+        def __init__(self):
+            self.calls = []
+
+        def validate(self, text, context=None):
+            self.calls.append((text, context))
+            return {
+                "is_safe": False,
+                "issues": [{"severity": "warning", "category": "danger", "matched_pattern": "x", "location": "", "original_text": text}],
+                "patched_text": f"{text} [patched]",
+                "original_text": text,
+            }
+
+    handler.formatter = RecordingFormatter()
+    handler.output_validator = PatchedValidator()
+
+    async def fake_analysis(query: str):
+        return {"final_decision": "raw decision"}
+
+    handler._run_agent_analysis = fake_analysis
+
+    update = FakeUpdate(user_id=502, text="run")
+    await handler._perform_analysis(
+        update,
+        "query",
+        protocol_name="proto",
+        investment_amount=123.0,
+        whitelist_result={
+            "status": "trusted",
+            "protocol_slug": "proto",
+            "metrics": {},
+            "confidence_score": 1.0,
+            "data_sources": [],
+            "reason": "hardcoded",
+        },
+    )
+
+    assert handler.output_validator.calls
+    ctx = handler.output_validator.calls[0][1]
+    assert ctx["protocol_name"] == "proto"
+    assert ctx["investment_amount"] == 123.0
+    assert handler.formatter.payloads[-1]["final_decision"] == "raw decision [patched]"
