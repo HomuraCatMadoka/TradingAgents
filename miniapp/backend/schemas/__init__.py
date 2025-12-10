@@ -1,7 +1,7 @@
-from miniapp.backend.schemas.analysis import Analysis, AnalysisCreate
-from miniapp.backend.schemas.favorite import Favorite, FavoriteCreate
-from miniapp.backend.schemas.session import Session, SessionCreate
-from miniapp.backend.schemas.user import User, UserCreate, UserUpdate
+from .analysis import Analysis, AnalysisCreate
+from .favorite import Favorite, FavoriteCreate
+from .session import Session, SessionCreate
+from .user import User, UserCreate, UserUpdate
 
 __all__ = [
     "Analysis",

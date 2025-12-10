@@ -8,7 +8,7 @@
 
 **最后更新**: 2025-12-10
 **当前阶段**: Phase 3 进行中（性能优化与功能增强）
-**本次更新**: 完成 Miniapp Task 0.4 前端 scaffold（路由/状态/服务层）
+**本次更新**: 回测数据加载/引擎/指标层补全，backtesting 包覆盖率 95%
 
 ---
 
@@ -82,6 +82,10 @@
   - 优雅降级（数据源失败不阻断）
   - Bot handlers 前置检查集成
   - 测试覆盖率 96%
+- [x] 回测基础模块（已完成于 2025-12-10）
+  - DeFi Llama 周级 TVL loader + Backtrader feed 映射
+  - Backtrader 回测封装与指标计算（收益率/夏普/回撤/胜率）
+  - backtesting 包测试覆盖率 95%（数据加载/引擎/指标/CLI/Bot 集成）
 
 ### 🔄 性能指标（截至 2025-12-10）
 
@@ -493,3 +497,6 @@ CREATE TABLE subscriptions (
 
 **文档维护者**: DeFi Agent 开发团队
 **文档模板版本**: v1.0
+
+## 🧪 Backtesting 模块进展
+- [x] Task 3: 策略实现（BuyHold / Threshold / AgentStrategy + AgentDecisionBridge），单测覆盖率 96%（pytest --cov=defiagents.backtesting.strategies）。

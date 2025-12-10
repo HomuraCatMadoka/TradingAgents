@@ -26,6 +26,7 @@ from rich.rule import Rule
 
 from defiagents.graph.trading_graph import TradingAgentsGraph
 from defiagents.default_config import DEFAULT_CONFIG
+from defiagents.backtesting import cli as backtesting_cli
 from cli.models import AnalystType
 from cli.utils import *
 
@@ -36,6 +37,7 @@ app = typer.Typer(
     help="TradingAgents CLI: Multi-Agents LLM Financial Trading Framework",
     add_completion=True,  # Enable shell completion
 )
+app.add_typer(backtesting_cli.app, name="backtest")
 
 
 # Create a deque to store recent messages with a maximum length

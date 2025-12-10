@@ -57,6 +57,7 @@ class DeFiTelegramBot:
         application.add_handler(CommandHandler("start", self.handlers.start_command))
         application.add_handler(CommandHandler("help", self.handlers.help_command))
         application.add_handler(CommandHandler("analyze", self.handlers.analyze_command))
+        application.add_handler(CommandHandler("backtest", self.handlers.backtest_command))
         application.add_handler(CommandHandler("strategy", self.handlers.strategy_command))
         application.add_handler(CommandHandler("compare", self.handlers.compare_command))
         application.add_handler(CommandHandler("status", self.handlers.status_command))

@@ -8,6 +8,7 @@ import asyncio
 import time
 import hashlib
 import json
+from functools import partial
 from threading import Lock
 from typing import Any, Dict, List, Optional
 from datetime import datetime
@@ -314,6 +315,82 @@ class CommandHandlers:
             protocol_name=whitelist_result["protocol_slug"] if whitelist_result else protocol_name,
             whitelist_result=whitelist_result,
         )
+
+    async def backtest_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """处理/backtest命令"""
+        # 延迟导入避免循环依赖
+        from defiagents.backtesting.bot_integration import run_backtest_command
+
+        user_id = update.effective_user.id
+        is_allowed, rejection_reason = self.check_rate_limit(user_id)
+        if not is_allowed:
+            await update.message.reply_text(self.formatter.format_error(rejection_reason))
+            return
+
+        args = context.args or []
+        if len(args) < 3:
+            await update.message.reply_text(
+                "❌ 请提供协议、策略和年限参数\n\n用法：`/backtest <协议> <策略> <年限>`\n示例：`/backtest aave-v3 buyhold 1`",
+                parse_mode="Markdown",
+            )
+            return
+
+        protocol_raw, strategy, years_raw = args[0], args[1], args[2]
+        agent_mode = args[3] if len(args) > 3 else "standard"
+
+        try:
+            years = int(years_raw)
+            if years <= 0:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text(self.formatter.format_error("参数错误：年限必须为正整数"))
+            return
+
+        protocol_slug = protocol_raw
+        if self.config.enable_input_sanitization and self.sanitizer:
+            sanitization = self.sanitizer.sanitize(protocol_raw)
+            if not sanitization.is_safe:
+                await update.message.reply_text(
+                    self.formatter.format_security_rejection(sanitization.rejection_reason),
+                    parse_mode="Markdown",
+                )
+                return
+            if getattr(sanitization, "intent", None) and sanitization.intent.protocol_name:
+                protocol_slug = sanitization.intent.protocol_name
+
+        whitelist_result = self._check_protocol_whitelist(protocol_slug)
+        if whitelist_result:
+            status = whitelist_result.get("status")
+            warning = format_whitelist_warning(protocol_slug, whitelist_result.get("reason"), status)
+            if status == "suspicious":
+                await update.message.reply_text(warning, parse_mode="Markdown")
+                return
+            if status == "unverified":
+                await update.message.reply_text(warning, parse_mode="Markdown")
+            protocol_slug = whitelist_result.get("protocol_slug", protocol_slug)
+
+        loop = asyncio.get_event_loop()
+        backtest_runner = partial(
+            run_backtest_command,
+            protocol_slug,
+            strategy,
+            years,
+            update.effective_chat.id if update and update.effective_chat else None,
+            agent_mode,
+            formatter=self.formatter,
+        )
+
+        try:
+            result_message = await asyncio.wait_for(
+                loop.run_in_executor(None, backtest_runner),
+                timeout=self.config.analysis_timeout,
+            )
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            logger.error("Backtest failed: %s", exc, exc_info=True)
+            await update.message.reply_text(self.formatter.format_error("回测失败，请稍后重试。"))
+            return
+
+        await update.message.reply_text(result_message, parse_mode="Markdown")
 
     async def strategy_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """

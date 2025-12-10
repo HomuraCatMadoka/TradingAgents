@@ -617,6 +617,43 @@ async def test_whitelist_warns_unverified_and_continues(handler_factory):
 
 
 @pytest.mark.anyio
+async def test_backtest_command(monkeypatch, handler_factory):
+    handler, _, handlers_module, _ = handler_factory(per_user="5")
+    handler.formatter = DummyFormatter()
+
+    captured = {}
+
+    def fake_backtest(protocol, strategy, years, chat_id=None, agent_mode="standard", formatter=None):
+        captured.update(
+            protocol=protocol,
+            strategy=strategy,
+            years=years,
+            chat_id=chat_id,
+            agent_mode=agent_mode,
+            formatter=formatter,
+        )
+        return "backtest-ok"
+
+    monkeypatch.setattr(handlers_module, "run_backtest_command", fake_backtest)
+
+    update = FakeUpdate(user_id=600, text="/backtest")
+    await handler.backtest_command(update, FakeContext(args=["aave-v3", "buyhold", "2", "agent"]))
+    assert update.message.replies[-1] == "backtest-ok"
+    assert captured["protocol"] == "aave-v3"
+    assert captured["chat_id"] == update.effective_chat.id
+    assert captured["formatter"] is handler.formatter
+
+    invalid_update = FakeUpdate(user_id=601, text="/backtest")
+    await handler.backtest_command(invalid_update, FakeContext(args=["aave-v3", "buyhold", "0"]))
+    assert any("参数错误" in reply for reply in invalid_update.message.replies)
+
+    handler.config.rate_limit_per_user = 0
+    limited_update = FakeUpdate(user_id=602, text="/backtest")
+    await handler.backtest_command(limited_update, FakeContext(args=["aave-v3", "buyhold", "1"]))
+    assert limited_update.message.replies[-1].startswith("error:")
+
+
+@pytest.mark.anyio
 async def test_output_validation_patches_final_decision(handler_factory):
     handler, _, _, _ = handler_factory(per_user="5")
     handler.config.cache_enabled = False

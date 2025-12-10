@@ -1,11 +1,10 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from miniapp.backend.db import Base
+from db import Base
 
 
 class User(Base):
@@ -19,13 +18,13 @@ class User(Base):
     language_code: Mapped[Optional[str]] = mapped_column(sa.String(10))
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True),
-        server_default=sa.text("timezone('utc', now())"),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
     last_active: Mapped[Optional[datetime]] = mapped_column(sa.DateTime(timezone=True))
     settings: Mapped[dict] = mapped_column(
-        JSONB,
-        server_default=sa.text("'{}'::jsonb"),
+        sa.JSON,
+        server_default=sa.text("'{}'"),
         nullable=False,
     )
 

@@ -1,9 +1,9 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 import sqlalchemy as sa
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from miniapp.backend.db import Base
+from db import Base
 
 
 class Favorite(Base):
@@ -17,7 +17,7 @@ class Favorite(Base):
     protocol_type: Mapped[str | None] = mapped_column(sa.String(50))
     added_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True),
-        server_default=sa.text("timezone('utc', now())"),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
 

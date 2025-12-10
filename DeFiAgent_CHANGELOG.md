@@ -639,3 +639,18 @@ PYTHONPATH=$PWD:$PYTHONPATH python3 examples/test_defi_with_gemini.py
 4. **用户教育**: 在 Bot 帮助文档中说明安全机制
 
 ---
+
+## 2025-12-10 Backtesting Task 3 增量
+- 新增 `defiagents/backtesting/strategies.py`：BuyHoldStrategy、ThresholdStrategy、AgentStrategy，包含 AgentDecisionBridge（超时保护、正则解析、dry_run）。
+- 新增 `tests/backtesting/test_strategies.py`，覆盖率 96%（pytest --cov=defiagents.backtesting.strategies）。
+
+## 2025-12-10 Backtesting Task 4 增量
+- 新增 `defiagents/backtesting/data_loader.py`：DeFi Llama TVL 历史数据周级重采样，异常数据过滤与 Backtrader feed 映射。
+- 新增 `defiagents/backtesting/engine.py` 与 `metrics.py`：轻量回测封装、核心绩效指标计算（收益率/夏普/回撤/胜率）。
+- 新增测试 `tests/backtesting/test_data_loader.py`、`tests/backtesting/test_engine.py`、`tests/backtesting/test_metrics.py`，回测包覆盖率 95%（pytest --cov=defiagents/backtesting）。
+- CLI/Bot 集成用例补充，覆盖 `_build_table`/`_dump_json` 及 `run_backtest_command` 路径，防止回归。
+
+## 2025-12-11 Compound V3 支持
+- 新增工具 `get_compound_markets`，输出 Compound V3 跨链市场概览（TVL/审计/核心功能/风险提示），注册到 DeFi 市场与基础分析工具节点。
+- 更新 `protocol_registry.py` 中 Compound V3 链列表（涵盖 Ethereum/Polygon/Base/Arbitrum/Optimism/Scroll/Mantle/Ronin/Unichain）并补充多链备注。
+- 新增测试 `tests/test_compound_v3.py`，覆盖 TVL 获取、协议信息、工具调用 Markdown 输出。

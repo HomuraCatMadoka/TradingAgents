@@ -83,6 +83,9 @@ class DummyFormatter:
     def format_security_rejection(self, reason: str) -> str:
         return f"rejected:{reason}"
 
+    def format_backtest_result(self, result):
+        return "backtest-result"
+
 
 class DummyIntent:
     def __init__(self, protocol_name: str = None, investment_amount=None, risk_preference: str = None, target_apy=None):

@@ -1,11 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from miniapp.backend.db import Base
+from db import Base
 
 
 class Session(Base):
@@ -24,7 +24,7 @@ class Session(Base):
     expires_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True),
-        server_default=sa.text("timezone('utc', now())"),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
 

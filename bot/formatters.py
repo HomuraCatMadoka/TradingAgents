@@ -256,6 +256,43 @@ DEX：Uniswap, Curve, Balancer
         # 确保每条消息不超过长度限制
         return [self._truncate_message(msg) for msg in messages]
 
+    def format_backtest_result(self, result: Dict[str, Any]) -> str:
+        """格式化回测结果为 Markdown 表格。"""
+        protocol = self._escape_markdown_content(str(result.get("protocol", "-")))
+        strategy = self._escape_markdown_content(str(result.get("strategy", "-")))
+        years = result.get("years", "-")
+        agent_mode = self._escape_markdown_content(str(result.get("agent_mode", "-")))
+
+        def pct(val: Any) -> str:
+            try:
+                return f"{float(val) * 100:.2f}%"
+            except (TypeError, ValueError):
+                return "-"
+
+        def money(val: Any) -> str:
+            try:
+                return f"${float(val):,.2f}"
+            except (TypeError, ValueError):
+                return "-"
+
+        lines = [
+            f"📊 回测结果 ({protocol}, {strategy}, {years}年)",
+            "",
+            "| 指标 | 数值 |",
+            "| --- | --- |",
+            f"| 初始资金 | {money(result.get('initial_cash'))} |",
+            f"| 最终价值 | {money(result.get('final_value'))} |",
+            f"| 总收益率 | {pct(result.get('total_return'))} |",
+            f"| 年化收益率 | {pct(result.get('annualized_return'))} |",
+            f"| 最大回撤 | {pct(result.get('max_drawdown'))} |",
+            f"| 夏普率 | {result.get('sharpe_ratio', '-')} |",
+            f"| 胜率 | {pct(result.get('win_rate'))} |",
+            f"| 交易次数 | {result.get('trades', '-')} |",
+            f"| Agent 模式 | {agent_mode} |",
+        ]
+
+        return self._truncate_message("\n".join(lines))
+
     def _format_summary(self, result: Dict[str, Any]) -> str:
         """格式化摘要"""
         protocol = result.get("protocol_of_interest", "Unknown")
