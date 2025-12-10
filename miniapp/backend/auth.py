@@ -3,33 +3,48 @@ import hmac
 import json
 import logging
 import time
+from collections.abc import MutableMapping
 from typing import Any, Dict, Optional
 from urllib.parse import parse_qsl
 
 AUTH_WINDOW_SECONDS = 300
 
 logger = logging.getLogger(__name__)
-_replay_cache: dict[str, int] = {}
+_replay_cache: MutableMapping[str, int] = {}
 
 
-def _record_hash(hash_value: str, now: int) -> bool:
+def _record_hash(hash_value: str, now: int, cache: MutableMapping[str, int]) -> bool:
     """Return True if the hash was seen within the validity window."""
-    expired = [key for key, ts in _replay_cache.items() if now - ts > AUTH_WINDOW_SECONDS]
+    expired = [key for key, ts in cache.items() if now - ts > AUTH_WINDOW_SECONDS]
     for key in expired:
-        _replay_cache.pop(key, None)
+        cache.pop(key, None)
 
-    if hash_value in _replay_cache:
+    if hash_value in cache:
         return True
 
-    _replay_cache[hash_value] = now
+    cache[hash_value] = now
     return False
 
 
-def verify_telegram_webapp_data(init_data: str, bot_token: str) -> Optional[Dict[str, Any]]:
+def clear_replay_cache() -> None:
+    """Clear the in-memory replay cache (used by tests)."""
+    _replay_cache.clear()
+
+
+def verify_telegram_webapp_data(
+    init_data: str,
+    bot_token: str,
+    *,
+    now: Optional[int] = None,
+    replay_cache: Optional[MutableMapping[str, int]] = None,
+) -> Optional[Dict[str, Any]]:
     """Validate Telegram WebApp initData. Returns parsed data on success."""
     if not init_data or not bot_token:
         logger.warning("Missing initData or bot_token for Telegram auth")
         return None
+
+    cache = replay_cache or _replay_cache
+    timestamp = now or int(time.time())
 
     try:
         params = dict(parse_qsl(init_data, keep_blank_values=True))
@@ -59,12 +74,11 @@ def verify_telegram_webapp_data(init_data: str, bot_token: str) -> Optional[Dict
             return None
 
         auth_date = int(auth_date_raw)
-        now = int(time.time())
-        if now - auth_date > AUTH_WINDOW_SECONDS:
-            logger.warning("Telegram auth expired: age=%s", now - auth_date)
+        if abs(timestamp - auth_date) > AUTH_WINDOW_SECONDS:
+            logger.warning("Telegram auth expired: age=%s", timestamp - auth_date)
             return None
 
-        if _record_hash(received_hash, now):
+        if _record_hash(received_hash, timestamp, cache):
             logger.warning("Telegram initData replay detected")
             return None
 

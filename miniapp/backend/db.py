@@ -1,8 +1,8 @@
 import os
-from typing import AsyncIterator
+from typing import Iterator
 
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
-from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy import create_engine
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 
 DEFAULT_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/miniapp"
@@ -14,16 +14,19 @@ class Base(DeclarativeBase):
     """Base class for all models."""
 
 
-engine: AsyncEngine = create_async_engine(DATABASE_URL, echo=ECHO_SQL)
-async_sessionmaker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+engine = create_engine(DATABASE_URL.replace("+aiosqlite", ""), echo=ECHO_SQL, future=True)
+SessionLocal = sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
 
 
-async def get_session() -> AsyncIterator[AsyncSession]:
-    """FastAPI dependency that yields an async session."""
-    async with async_sessionmaker() as session:
+def get_session() -> Iterator[Session]:
+    """FastAPI dependency that yields a sync session."""
+    session = SessionLocal()
+    try:
         yield session
+    finally:
+        session.close()
 
 
 async def close_engine() -> None:
     """Dispose the engine, used on application shutdown."""
-    await engine.dispose()
+    engine.dispose()
